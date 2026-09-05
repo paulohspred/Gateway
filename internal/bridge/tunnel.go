@@ -56,15 +56,16 @@ type Hooks struct {
 }
 
 type Tunnel struct {
-	ID           string
-	Field        Endpoint
-	Consumer     Endpoint
-	Logger       *slog.Logger
-	Hooks        Hooks
-	PairTimeout  time.Duration
-	WriteTimeout time.Duration
-	DrainTimeout time.Duration
-	counter      atomic.Uint64
+	ID            string
+	Field         Endpoint
+	Consumer      Endpoint
+	PacketFraming string
+	Logger        *slog.Logger
+	Hooks         Hooks
+	PairTimeout   time.Duration
+	WriteTimeout  time.Duration
+	DrainTimeout  time.Duration
+	counter       atomic.Uint64
 }
 
 type connectionSource interface {
@@ -126,9 +127,13 @@ func (t *Tunnel) Run(ctx context.Context) error {
 			t.Hooks.OnOpen(info)
 		}
 		if t.Logger != nil {
-			t.Logger.Info("bridge pair open", "tunnel", t.ID, "pair", pairID, "fieldRemote", info.FieldRemote, "consumerRemote", info.ConsumerRemote)
+			t.Logger.Info("bridge pair open", "tunnel", t.ID, "pair", pairID, "fieldRemote", info.FieldRemote, "consumerRemote", info.ConsumerRemote, "packetFraming", t.PacketFraming)
 		}
-		err = copyDuplex(ctx, pairID, fieldConn, consumerConn, t.Hooks, t.WriteTimeout, t.DrainTimeout)
+		if t.PacketFraming == "length32be" {
+			err = copyPacketFramedDuplex(ctx, pairID, fieldConn, consumerConn, t.Field.Network == "unixpacket", t.Hooks, t.WriteTimeout, t.DrainTimeout)
+		} else {
+			err = copyDuplex(ctx, pairID, fieldConn, consumerConn, t.Hooks, t.WriteTimeout, t.DrainTimeout)
+		}
 		_ = fieldConn.Close()
 		_ = consumerConn.Close()
 		if t.Hooks.OnClose != nil {
@@ -333,7 +338,7 @@ func newSource(ctx context.Context, ep Endpoint) (connectionSource, error) {
 	switch ep.Network {
 	case "tcp":
 		return newTCPSource(ctx, ep)
-	case "unix":
+	case "unix", "unixpacket":
 		return newUnixSource(ctx, ep)
 	default:
 		return nil, fmt.Errorf("unsupported network %q", ep.Network)
