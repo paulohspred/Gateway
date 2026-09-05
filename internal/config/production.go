@@ -51,20 +51,37 @@ func LoadStrict(path string) (Config, error) {
 
 func validateProductionConflicts(cfg *Config) error {
 	seenIDs := map[string]string{}
+	seenMetricTokens := map[string]string{}
 	claimID := func(kind, id string) error {
 		id = strings.TrimSpace(id)
 		if prev, exists := seenIDs[id]; exists {
 			return fmt.Errorf("resource id %q is already used by %s", id, prev)
 		}
 		seenIDs[id] = kind
+		token := metricToken(id)
+		if prev, exists := seenMetricTokens[token]; exists {
+			return fmt.Errorf("resource id %q collides with %q after metrics sanitization", id, prev)
+		}
+		seenMetricTokens[token] = id
 		return nil
 	}
 
 	serialDevices := map[string]string{}
 	providerSockets := map[string]string{}
 	unixListeners := map[string]string{}
+	claimProviderSocket := func(label, socket string) error {
+		socket = filepath.Clean(socket)
+		if prev, exists := providerSockets[socket]; exists {
+			return fmt.Errorf("provider socket %q for %s conflicts with %s", socket, label, prev)
+		}
+		providerSockets[socket] = label
+		unixListeners[socket] = label
+		return nil
+	}
+
 	for _, p := range cfg.SerialProviders {
-		if err := claimID("serialProvider "+p.ID, p.ID); err != nil {
+		label := "serialProvider " + p.ID
+		if err := claimID(label, p.ID); err != nil {
 			return err
 		}
 		device := filepath.Clean(strings.TrimSpace(p.Device))
@@ -74,18 +91,19 @@ func validateProductionConflicts(cfg *Config) error {
 		if prev, exists := serialDevices[device]; exists {
 			return fmt.Errorf("serial device %q is already used by %s", device, prev)
 		}
-		serialDevices[device] = "serialProvider " + p.ID
-		socket := filepath.Clean(p.Socket)
-		providerSockets[socket] = "serialProvider " + p.ID
-		unixListeners[socket] = "serialProvider " + p.ID
-	}
-	for _, p := range cfg.CANProviders {
-		if err := claimID("canProvider "+p.ID, p.ID); err != nil {
+		serialDevices[device] = label
+		if err := claimProviderSocket(label, p.Socket); err != nil {
 			return err
 		}
-		socket := filepath.Clean(p.Socket)
-		providerSockets[socket] = "canProvider " + p.ID
-		unixListeners[socket] = "canProvider " + p.ID
+	}
+	for _, p := range cfg.CANProviders {
+		label := "canProvider " + p.ID
+		if err := claimID(label, p.ID); err != nil {
+			return err
+		}
+		if err := claimProviderSocket(label, p.Socket); err != nil {
+			return err
+		}
 	}
 	for _, t := range cfg.Tunnels {
 		if err := claimID("tunnel "+t.ID, t.ID); err != nil {
@@ -171,9 +189,20 @@ func validateProductionConflicts(cfg *Config) error {
 			if err := claimUDP("udp tunnel "+t.ID+" consumer", t.Consumer.Bind); err != nil {
 				return err
 			}
-		}
 	}
 	return nil
+}
+
+func metricToken(id string) string {
+	var b strings.Builder
+	for _, r := range id {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == ':' {
+			b.WriteRune(r)
+		} else {
+			b.WriteByte('_')
+		}
+	}
+	return b.String()
 }
 
 func bindsConflict(a, b string) bool {
