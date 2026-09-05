@@ -82,7 +82,7 @@ func TestTunnelParallelTCPPairsUseRealSockets(t *testing.T) {
 		DrainTimeout:       50 * time.Millisecond,
 		MaxConcurrentPairs: 4,
 		GlobalPairLimiter:  limiter,
-		Hooks: Hooks{OnReady: func(string) { readyOnce.Do(func() { close(ready) }) }},
+		Hooks:              Hooks{OnReady: func(string) { readyOnce.Do(func() { close(ready) }) }},
 	}
 	tunnelDone := make(chan error, 1)
 	go func() { tunnelDone <- tunnel.Run(ctx) }()
