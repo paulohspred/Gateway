@@ -17,9 +17,9 @@ type bindClaim struct {
 }
 
 // LoadStrict is the production configuration entrypoint. It rejects unknown
-// JSON fields and trailing JSON values before applying the normal schema
-// defaults/validation, then checks resource conflicts that would otherwise
-// only appear when the daemon starts opening sockets/devices.
+// JSON fields and trailing JSON values before applying schema defaults and
+// validation to the same byte snapshot, then checks resource conflicts that
+// would otherwise only appear when the daemon starts opening resources.
 func LoadStrict(path string) (Config, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -39,7 +39,7 @@ func LoadStrict(path string) (Config, error) {
 		return Config{}, fmt.Errorf("invalid configuration JSON after first value: %w", err)
 	}
 
-	cfg, err := Load(path)
+	cfg, err := loadRaw(raw)
 	if err != nil {
 		return Config{}, err
 	}
@@ -67,14 +67,17 @@ func validateProductionConflicts(cfg *Config) error {
 	}
 
 	physicalDevices := map[string]string{}
+	usbSelectors := map[string]string{}
 	providerSockets := map[string]string{}
+	providerSocketNetworks := map[string]string{}
 	unixListeners := map[string]string{}
-	claimProviderSocket := func(label, socket string) error {
+	claimProviderSocket := func(label, socket, network string) error {
 		socket = filepath.Clean(socket)
 		if prev, exists := providerSockets[socket]; exists {
 			return fmt.Errorf("provider socket %q for %s conflicts with %s", socket, label, prev)
 		}
 		providerSockets[socket] = label
+		providerSocketNetworks[socket] = network
 		unixListeners[socket] = label
 		return nil
 	}
@@ -98,7 +101,7 @@ func validateProductionConflicts(cfg *Config) error {
 		if err := claimPhysicalDevice(label, "serial", p.Device); err != nil {
 			return err
 		}
-		if err := claimProviderSocket(label, p.Socket); err != nil {
+		if err := claimProviderSocket(label, p.Socket, "unix"); err != nil {
 			return err
 		}
 	}
@@ -107,10 +110,18 @@ func validateProductionConflicts(cfg *Config) error {
 		if err := claimID(label, p.ID); err != nil {
 			return err
 		}
-		if err := claimPhysicalDevice(label, "USB HID", p.Device); err != nil {
-			return err
+		if p.Device != "" {
+			if err := claimPhysicalDevice(label, "USB HID", p.Device); err != nil {
+				return err
+			}
+		} else {
+			selector := p.VendorID + ":" + p.ProductID + ":" + p.SerialNumber
+			if prev, exists := usbSelectors[selector]; exists {
+				return fmt.Errorf("USB HID selector %q for %s is already used by %s", selector, label, prev)
+			}
+			usbSelectors[selector] = label
 		}
-		if err := claimProviderSocket(label, p.Socket); err != nil {
+		if err := claimProviderSocket(label, p.Socket, "unixpacket"); err != nil {
 			return err
 		}
 	}
@@ -119,7 +130,7 @@ func validateProductionConflicts(cfg *Config) error {
 		if err := claimID(label, p.ID); err != nil {
 			return err
 		}
-		if err := claimProviderSocket(label, p.Socket); err != nil {
+		if err := claimProviderSocket(label, p.Socket, "unixpacket"); err != nil {
 			return err
 		}
 	}
@@ -174,12 +185,16 @@ func validateProductionConflicts(cfg *Config) error {
 			if ep.Mode == "listen" {
 				return claimTCP(label, ep.Bind)
 			}
-		case "unix":
+		case "unix", "unixpacket":
 			if ep.Mode == "listen" {
 				return claimUnixListener(label, ep.Bind)
 			}
 			path := filepath.Clean(ep.Address)
 			if provider, exists := providerSockets[path]; exists {
+				expectedNetwork := providerSocketNetworks[path]
+				if expectedNetwork != network {
+					return fmt.Errorf("provider socket %q (%s) requires network %s; %s uses %s", path, provider, expectedNetwork, label, network)
+				}
 				if prev, used := providerConsumers[path]; used {
 					return fmt.Errorf("provider socket %q (%s) is consumed by both %s and %s", path, provider, prev, label)
 				}
