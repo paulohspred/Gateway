@@ -139,6 +139,11 @@ jobs:
           tar -tzf "$archive" | grep -q '/sbom.cdx.json$'
           tar -tzf "$archive" | grep -q '/systemd/rc-gateway-umbrella.service$'
           tar -tzf "$archive" | grep -q '/scripts/rollback-release.sh$'
+          tar -tzf "$archive" | grep -q '/scripts/probe-usb-hid.sh$'
+          tar -tzf "$archive" | grep -q '/docs/USB_HID_COMAP.md$'
+          tar -tzf "$archive" | grep -q '/docs/RUNBOOK.md$'
+          tar -tzf "$archive" | grep -q '/docs/COMPATIBILITY_MATRIX.md$'
+          tar -tzf "$archive" | grep -q '/README.md$'
       - name: Upload release candidates
         uses: actions/upload-artifact@v4
         with:
