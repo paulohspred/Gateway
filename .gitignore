@@ -1,0 +1,17 @@
+# Build artifacts
+/rc-gateway
+/dist/
+/dist-*/
+*.tar.gz
+*.tar.gz.sha256
+
+# Go test/profiling artifacts
+/coverage.out
+/*.prof
+
+# Editor/OS noise
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.tmp

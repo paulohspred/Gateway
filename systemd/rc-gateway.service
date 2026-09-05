@@ -1,0 +1,47 @@
+[Unit]
+Description=RC Universal Gateway (bridge-first)
+Documentation=file:/opt/rc-gateway/current/docs/RUNBOOK.md
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=10
+
+[Service]
+Type=notify
+NotifyAccess=main
+WatchdogSec=30s
+TimeoutStartSec=60s
+TimeoutStopSec=20s
+User=rc-gateway
+Group=rc-gateway
+SupplementaryGroups=dialout
+WorkingDirectory=/opt/rc-gateway/current
+ExecStartPre=/opt/rc-gateway/current/bin/rc-gateway --check-config --config /etc/rc-gateway.json
+ExecStart=/opt/rc-gateway/current/bin/rc-gateway --config /etc/rc-gateway.json
+Restart=on-failure
+RestartSec=3s
+RuntimeDirectory=rc-gateway
+RuntimeDirectoryMode=0750
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectHostname=true
+ProtectClock=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+LockPersonality=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK AF_CAN
+LimitNOFILE=65536
+TasksMax=1024
+
+[Install]
+WantedBy=multi-user.target

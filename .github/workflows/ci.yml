@@ -1,0 +1,216 @@
+name: Gateway CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Quality, unit, race and config
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.27.1'
+          cache: true
+      - name: Install pinned quality tools
+        run: |
+          mkdir -p "$RUNNER_TEMP/gobin"
+          GOBIN="$RUNNER_TEMP/gobin" go install github.com/rhysd/actionlint/cmd/actionlint@914e7df21a07ef503a81201c76d2b11c789d3fca
+          GOBIN="$RUNNER_TEMP/gobin" go install honnef.co/go/tools/cmd/staticcheck@1285a6a5ec1e0ebb658f49e82b6c566a878cc3cb
+          echo "$RUNNER_TEMP/gobin" >> "$GITHUB_PATH"
+      - name: Canonical project state
+        run: bash scripts/check-project-state-updated.sh
+      - name: Workflow lint
+        run: |
+          "$RUNNER_TEMP/gobin/actionlint" .github/workflows/ci.yml .github/workflows/codeql.yml .github/workflows/release-attest.yml
+      - name: Format
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [[ -n "$unformatted" ]]; then
+            printf '%s\n' "$unformatted"
+            while IFS= read -r file; do
+              [[ -n "$file" ]] && gofmt -d "$file"
+            done <<< "$unformatted"
+            exit 1
+          fi
+      - name: Module integrity
+        run: |
+          go mod verify
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+      - name: Vet
+        run: go vet ./...
+      - name: Staticcheck
+        run: |
+          "$RUNNER_TEMP/gobin/staticcheck" ./...
+      - name: Unit and integration tests
+        run: go test ./... -shuffle=on -count=1 -coverprofile=coverage.out
+      - name: Rapid SCADA Modbus transport contract
+        run: go test ./internal/bridge -run '^TestRapidSCADA' -count=1 -timeout=2m
+      - name: Coverage threshold
+        env:
+          RC_GATEWAY_MIN_COVERAGE: '58.0'
+        run: bash scripts/check-coverage.sh coverage.out
+      - name: Race detector
+        run: go test -race ./... -count=1
+      - name: Build
+        run: go build -trimpath ./cmd/rc-gateway
+      - name: Validate production examples
+        run: |
+          ./rc-gateway --version
+          for cfg in configs/*.json; do
+            echo "checking $cfg"
+            ./rc-gateway --check-config --config "$cfg"
+          done
+      - name: Coverage summary
+        run: go tool cover -func=coverage.out | tail -1
+      - name: Local CI script parity
+        env:
+          RC_GATEWAY_REQUIRE_TOOLING: '1'
+          RC_GATEWAY_MIN_COVERAGE: '58.0'
+        run: bash scripts/ci.sh
+
+  stress:
+    name: Stress and leak gate
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.27.1'
+          cache: true
+      - name: 1000 concurrent pairs and 1000 TCP churn cycles
+        env:
+          RC_GATEWAY_STRESS: '1'
+          RC_GATEWAY_STRESS_PAIRS: '1000'
+          RC_GATEWAY_CHURN_CYCLES: '1000'
+        run: go test ./internal/bridge -run '^TestStress' -count=1 -timeout=12m
+
+  soak:
+    name: Impairment and mini-soak gate
+    needs: stress
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.27.1'
+          cache: true
+      - name: Repeated impaired reconnect soak
+        env:
+          RC_GATEWAY_SOAK: '1'
+          RC_GATEWAY_SOAK_SECONDS: '30'
+        run: go test ./internal/bridge -run '^TestSoakImpairedReconnect$' -count=1 -timeout=2m
+
+  release:
+    name: Security, reproducibility and release
+    needs: soak
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.27.1'
+          cache: true
+      - name: Install pinned supply-chain tools
+        run: |
+          mkdir -p "$RUNNER_TEMP/gobin"
+          GOBIN="$RUNNER_TEMP/gobin" go install golang.org/x/vuln/cmd/govulncheck@8fcedea455d953a0f8470e1f41420bb6f2e72665
+          GOBIN="$RUNNER_TEMP/gobin" go install github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@07257d5b9cbd2a3d4338a880c0ca50081e1ac445
+          echo "$RUNNER_TEMP/gobin" >> "$GITHUB_PATH"
+      - name: Vulnerability scan
+        run: |
+          "$RUNNER_TEMP/gobin/govulncheck" ./...
+      - name: Shell syntax
+        run: bash -n scripts/*.sh
+      - name: Installer archive security tests
+        run: bash scripts/test-installer-security.sh
+      - name: Reproducible release build
+        run: |
+          VERSION="ci-${GITHUB_SHA}"
+          REQUIRE_SBOM=1 ARCHES="amd64 arm64" DIST_DIR="$PWD/dist-a" bash scripts/build-release.sh "$VERSION"
+          REQUIRE_SBOM=1 ARCHES="amd64 arm64" DIST_DIR="$PWD/dist-b" bash scripts/build-release.sh "$VERSION"
+          for arch in amd64 arm64; do
+            a="dist-a/rc-gateway_${VERSION}_linux_${arch}.tar.gz"
+            b="dist-b/rc-gateway_${VERSION}_linux_${arch}.tar.gz"
+            cmp "$a" "$b"
+            cmp "$a.sha256" "$b.sha256"
+          done
+          cmp dist-a/install-scada-stack.sh dist-b/install-scada-stack.sh
+          cmp dist-a/rc-gateway.safe.json dist-b/rc-gateway.safe.json
+          cmp dist-a/SCADA_STACK_INSTALLER.md dist-b/SCADA_STACK_INSTALLER.md
+      - name: Gateway and Rapid SCADA stack installer contract
+        run: |
+          VERSION="ci-${GITHUB_SHA}"
+          archive="dist-a/rc-gateway_${VERSION}_linux_amd64.tar.gz"
+          bash scripts/test-scada-stack-installer.sh "$archive" "$archive.sha256"
+      - name: Validate release archive and installer dry-run
+        run: |
+          VERSION="ci-${GITHUB_SHA}"
+          archive="dist-a/rc-gateway_${VERSION}_linux_amd64.tar.gz"
+          bash scripts/install-release.sh --dry-run "$archive" "$archive.sha256" configs/gateway.example.json
+          test -x dist-a/install-scada-stack.sh
+          test -f dist-a/rc-gateway.safe.json
+          test -f dist-a/SCADA_STACK_INSTALLER.md
+          tar -tzf "$archive" | grep -q '/sbom.cdx.json$'
+          tar -tzf "$archive" | grep -q '/systemd/rc-gateway.service$'
+          tar -tzf "$archive" | grep -q '/scripts/rollback-release.sh$'
+          tar -tzf "$archive" | grep -q '/scripts/probe-usb-hid.sh$'
+          tar -tzf "$archive" | grep -q '/scripts/collect-diagnostics.sh$'
+          tar -tzf "$archive" | grep -q '/scripts/vm-acceptance.sh$'
+          tar -tzf "$archive" | grep -q '/scripts/rapid-scada-acceptance.sh$'
+          tar -tzf "$archive" | grep -q '/scripts/rapid-scada-production-acceptance.sh$'
+          tar -tzf "$archive" | grep -q '/scripts/install-scada-stack.sh$'
+          tar -tzf "$archive" | grep -q '/docs/USB_HID_COMAP.md$'
+          tar -tzf "$archive" | grep -q '/docs/RUNBOOK.md$'
+          tar -tzf "$archive" | grep -q '/docs/COMPATIBILITY_MATRIX.md$'
+          tar -tzf "$archive" | grep -q '/docs/RAPID_SCADA_INTEGRATION.md$'
+          tar -tzf "$archive" | grep -q '/docs/GENERATOR_SCADA_PRODUCTION_READINESS.md$'
+          tar -tzf "$archive" | grep -q '/docs/SCADA_STACK_INSTALLER.md$'
+          tar -tzf "$archive" | grep -q '/docs/VM_ACCEPTANCE.md$'
+          tar -tzf "$archive" | grep -q '/docs/THREAT_MODEL.md$'
+          tar -tzf "$archive" | grep -q '/docs/CONFIGURATION_COMPATIBILITY.md$'
+          tar -tzf "$archive" | grep -q '/configs/rapid-scada.modbus-tcp.example.json$'
+          tar -tzf "$archive" | grep -q '/configs/rapid-scada.rtu-over-tcp.example.json$'
+          tar -tzf "$archive" | grep -q '/configs/rapid-scada.rs485-multidrop.example.json$'
+          tar -tzf "$archive" | grep -q '/configs/scada-stack.safe.example.json$'
+          tar -tzf "$archive" | grep -q '/README.md$'
+          tar -tzf "$archive" | grep -q '/LICENSE$'
+          tar -tzf "$archive" | grep -q '/NOTICE$'
+          tar -tzf "$archive" | grep -q '/THIRD_PARTY_NOTICES.md$'
+          tar -xOzf "$archive" --wildcards '*/MANIFEST' | grep -qx 'product=rc-gateway'
+          tar -xOzf "$archive" --wildcards '*/MANIFEST' | grep -qx 'license=Proprietary-All-Rights-Reserved'
+          if tar -tzf "$archive" | grep -q 'rc-gateway-umbrella'; then
+            echo "legacy umbrella branding leaked into canonical release" >&2
+            exit 1
+          fi
+      - name: Upload release candidates
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: rc-gateway-${{ github.sha }}
+          path: dist-a/*
+          if-no-files-found: error
+          retention-days: 14
