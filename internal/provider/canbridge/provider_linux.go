@@ -34,6 +34,7 @@ type Config struct {
 }
 
 type Hooks struct {
+	OnReady func(providerID string)
 	OnOpen  func(sessionID string)
 	OnFrame func(sessionID, direction string, n uint64)
 	OnClose func(sessionID string, err error)
@@ -62,10 +63,15 @@ func Run(ctx context.Context, cfg Config, logger *slog.Logger, hooks Hooks) erro
 	if cfg.ID == "" || cfg.Interface == "" || !filepath.IsAbs(cfg.Socket) {
 		return fmt.Errorf("CAN provider requires id, interface and absolute socket")
 	}
+	if _, err := net.InterfaceByName(cfg.Interface); err != nil {
+		return fmt.Errorf("CAN provider %s interface %s unavailable: %w", cfg.ID, cfg.Interface, err)
+	}
 	if err := os.MkdirAll(filepath.Dir(cfg.Socket), 0o750); err != nil {
 		return err
 	}
-	_ = os.Remove(cfg.Socket)
+	if err := removeStaleSocket(cfg.Socket); err != nil {
+		return err
+	}
 	addr := &net.UnixAddr{Name: cfg.Socket, Net: "unixpacket"}
 	ln, err := net.ListenUnix("unixpacket", addr)
 	if err != nil {
@@ -77,6 +83,9 @@ func Run(ctx context.Context, cfg Config, logger *slog.Logger, hooks Hooks) erro
 	}()
 	if err := os.Chmod(cfg.Socket, 0o660); err != nil {
 		return err
+	}
+	if hooks.OnReady != nil {
+		hooks.OnReady(cfg.ID)
 	}
 
 	stop := make(chan struct{})
@@ -242,4 +251,18 @@ func validFrameSize(n int) bool { return n == CANMTU || n == CANFDMTU }
 
 func isNormalClose(err error) bool {
 	return err == nil || errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) || errors.Is(err, os.ErrClosed)
+}
+
+func removeStaleSocket(path string) error {
+	info, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSocket == 0 {
+		return fmt.Errorf("refusing to remove non-socket path %s", path)
+	}
+	return os.Remove(path)
 }
