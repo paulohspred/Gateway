@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net"
 	"net/netip"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -56,16 +57,18 @@ type Hooks struct {
 }
 
 type Tunnel struct {
-	ID            string
-	Field         Endpoint
-	Consumer      Endpoint
-	PacketFraming string
-	Logger        *slog.Logger
-	Hooks         Hooks
-	PairTimeout   time.Duration
-	WriteTimeout  time.Duration
-	DrainTimeout  time.Duration
-	counter       atomic.Uint64
+	ID                 string
+	Field              Endpoint
+	Consumer           Endpoint
+	PacketFraming      string
+	Logger             *slog.Logger
+	Hooks              Hooks
+	PairTimeout        time.Duration
+	WriteTimeout       time.Duration
+	DrainTimeout       time.Duration
+	MaxConcurrentPairs int
+	GlobalPairLimiter  *PairLimiter
+	counter            atomic.Uint64
 }
 
 type connectionSource interface {
@@ -86,6 +89,9 @@ func (t *Tunnel) Run(ctx context.Context) error {
 	if t.DrainTimeout <= 0 {
 		t.DrainTimeout = 2 * time.Second
 	}
+	if t.MaxConcurrentPairs <= 0 {
+		t.MaxConcurrentPairs = 1
+	}
 	field, err := newSource(ctx, t.Field)
 	if err != nil {
 		return fmt.Errorf("tunnel %s field: %w", t.ID, err)
@@ -99,14 +105,26 @@ func (t *Tunnel) Run(ctx context.Context) error {
 	if t.Hooks.OnReady != nil {
 		t.Hooks.OnReady(t.ID)
 	}
+
+	localSlots := make(chan struct{}, t.MaxConcurrentPairs)
+	var pairWG sync.WaitGroup
+	defer pairWG.Wait()
+
 	for {
-		if ctx.Err() != nil {
+		if err := acquireLocalSlot(ctx, localSlots); err != nil {
 			return nil
 		}
+		if err := t.GlobalPairLimiter.Acquire(ctx); err != nil {
+			releaseLocalSlot(localSlots)
+			return nil
+		}
+
 		pairCtx, cancel := context.WithTimeout(ctx, t.PairTimeout)
 		fieldConn, consumerConn, err := acquirePair(pairCtx, field, consumer, t.Field.Mode, t.Consumer.Mode)
 		cancel()
 		if err != nil {
+			releaseLocalSlot(localSlots)
+			t.GlobalPairLimiter.Release()
 			if ctx.Err() != nil {
 				return nil
 			}
@@ -121,34 +139,64 @@ func (t *Tunnel) Run(ctx context.Context) error {
 			}
 			return fmt.Errorf("tunnel %s acquire pair: %w", t.ID, err)
 		}
-		pairID := fmt.Sprintf("%s-%d-%d", t.ID, time.Now().UnixNano(), t.counter.Add(1))
-		info := PairInfo{TunnelID: t.ID, PairID: pairID, FieldLocal: addr(fieldConn.LocalAddr()), FieldRemote: addr(fieldConn.RemoteAddr()), ConsumerLocal: addr(consumerConn.LocalAddr()), ConsumerRemote: addr(consumerConn.RemoteAddr()), OpenedAt: time.Now().UTC()}
-		if t.Hooks.OnOpen != nil {
-			t.Hooks.OnOpen(info)
+
+		pairWG.Add(1)
+		go func() {
+			defer pairWG.Done()
+			defer releaseLocalSlot(localSlots)
+			defer t.GlobalPairLimiter.Release()
+			t.runPair(ctx, fieldConn, consumerConn)
+		}()
+	}
+}
+
+func acquireLocalSlot(ctx context.Context, slots chan struct{}) error {
+	select {
+	case slots <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func releaseLocalSlot(slots chan struct{}) {
+	select {
+	case <-slots:
+	default:
+		panic("bridge tunnel local slot released without acquisition")
+	}
+}
+
+func (t *Tunnel) runPair(ctx context.Context, fieldConn, consumerConn net.Conn) {
+	pairID := fmt.Sprintf("%s-%d-%d", t.ID, time.Now().UnixNano(), t.counter.Add(1))
+	info := PairInfo{TunnelID: t.ID, PairID: pairID, FieldLocal: addr(fieldConn.LocalAddr()), FieldRemote: addr(fieldConn.RemoteAddr()), ConsumerLocal: addr(consumerConn.LocalAddr()), ConsumerRemote: addr(consumerConn.RemoteAddr()), OpenedAt: time.Now().UTC()}
+	if t.Hooks.OnOpen != nil {
+		t.Hooks.OnOpen(info)
+	}
+	if t.Logger != nil {
+		t.Logger.Info("bridge pair open", "tunnel", t.ID, "pair", pairID, "fieldRemote", info.FieldRemote, "consumerRemote", info.ConsumerRemote, "packetFraming", t.PacketFraming)
+	}
+
+	var err error
+	switch {
+	case t.Field.Network == "unixpacket" && t.Consumer.Network == "unixpacket":
+		err = copyPacketDuplex(ctx, pairID, fieldConn, consumerConn, t.Hooks, t.WriteTimeout, t.DrainTimeout)
+	case t.PacketFraming == "length32be":
+		err = copyPacketFramedDuplex(ctx, pairID, fieldConn, consumerConn, t.Field.Network == "unixpacket", t.Hooks, t.WriteTimeout, t.DrainTimeout)
+	default:
+		err = copyDuplex(ctx, pairID, fieldConn, consumerConn, t.Hooks, t.WriteTimeout, t.DrainTimeout)
+	}
+	_ = fieldConn.Close()
+	_ = consumerConn.Close()
+	if t.Hooks.OnClose != nil {
+		t.Hooks.OnClose(info, err)
+	}
+	if t.Logger != nil {
+		attrs := []any{"tunnel", t.ID, "pair", pairID}
+		if err != nil {
+			attrs = append(attrs, "error", err)
 		}
-		if t.Logger != nil {
-			t.Logger.Info("bridge pair open", "tunnel", t.ID, "pair", pairID, "fieldRemote", info.FieldRemote, "consumerRemote", info.ConsumerRemote, "packetFraming", t.PacketFraming)
-		}
-		switch {
-		case t.Field.Network == "unixpacket" && t.Consumer.Network == "unixpacket":
-			err = copyPacketDuplex(ctx, pairID, fieldConn, consumerConn, t.Hooks, t.WriteTimeout, t.DrainTimeout)
-		case t.PacketFraming == "length32be":
-			err = copyPacketFramedDuplex(ctx, pairID, fieldConn, consumerConn, t.Field.Network == "unixpacket", t.Hooks, t.WriteTimeout, t.DrainTimeout)
-		default:
-			err = copyDuplex(ctx, pairID, fieldConn, consumerConn, t.Hooks, t.WriteTimeout, t.DrainTimeout)
-		}
-		_ = fieldConn.Close()
-		_ = consumerConn.Close()
-		if t.Hooks.OnClose != nil {
-			t.Hooks.OnClose(info, err)
-		}
-		if t.Logger != nil {
-			attrs := []any{"tunnel", t.ID, "pair", pairID}
-			if err != nil {
-				attrs = append(attrs, "error", err)
-			}
-			t.Logger.Info("bridge pair closed", attrs...)
-		}
+		t.Logger.Info("bridge pair closed", attrs...)
 	}
 }
 
