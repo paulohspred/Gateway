@@ -75,6 +75,9 @@ cleanup() {
 trap cleanup EXIT
 KIT_DIR="$WORK_DIR/kit"
 GATEWAY_SOURCE_DIR="$WORK_DIR/source"
+RAPID_DOWNLOAD="$WORK_DIR/rapidscada_${RAPID_VERSION}_linux_en.zip"
+RAPID_ARCHIVE="$KIT_DIR/rapidscada_${RAPID_VERSION}_linux_en.zip"
+CUSTOM_CONFIG_DOWNLOAD="$WORK_DIR/rc-gateway.custom.json"
 mkdir -p "$KIT_DIR"
 
 curl_get() {
@@ -88,7 +91,6 @@ curl_get() {
 }
 
 GATEWAY_GIT_URL="https://github.com/${GATEWAY_REPO}.git"
-RAPID_ARCHIVE="$KIT_DIR/rapidscada_${RAPID_VERSION}_linux_en.zip"
 
 log "clonando Gateway com metadata Git"
 git -c advice.detachedHead=false clone --quiet "$GATEWAY_GIT_URL" "$GATEWAY_SOURCE_DIR"
@@ -110,15 +112,17 @@ PROJECT_GOROOT="$(GOTOOLCHAIN="$PROJECT_GOTOOLCHAIN" go env GOROOT)"
 PROJECT_GO_BIN="$PROJECT_GOROOT/bin"
 log "toolchain ativa: $($PROJECT_GO_BIN/go version)"
 
+# Inputs externos são baixados fora de KIT_DIR porque build-release.sh recria
+# integralmente DIST_DIR. Depois da build eles são copiados para o kit final.
 log "baixando Rapid SCADA ${RAPID_VERSION} do fornecedor oficial"
-curl_get "$RAPID_URL" "$RAPID_ARCHIVE"
-RAPID_DOWNLOADED_SHA="$(sha256sum "$RAPID_ARCHIVE" | awk '{print $1}')"
+curl_get "$RAPID_URL" "$RAPID_DOWNLOAD"
+RAPID_DOWNLOADED_SHA="$(sha256sum "$RAPID_DOWNLOAD" | awk '{print $1}')"
 [[ "${RAPID_DOWNLOADED_SHA,,}" == "${RAPID_SHA256_EXPECTED,,}" ]] || die "SHA256 do Rapid SCADA não confere. esperado=$RAPID_SHA256_EXPECTED obtido=$RAPID_DOWNLOADED_SHA" 3
 log "Rapid SCADA SHA256 conferido: $RAPID_DOWNLOADED_SHA"
 
 if [[ -n "$GATEWAY_CONFIG_URL" ]]; then
   log "baixando configuração personalizada do Gateway"
-  curl_get "$GATEWAY_CONFIG_URL" "$KIT_DIR/rc-gateway.json"
+  curl_get "$GATEWAY_CONFIG_URL" "$CUSTOM_CONFIG_DOWNLOAD"
 fi
 
 log "gerando artifact Gateway local com SBOM"
@@ -147,6 +151,13 @@ PATH="$PROJECT_GO_BIN:$PATH" \
 mapfile -t built_gateway_archives < <(find "$KIT_DIR" -maxdepth 1 -type f -name "rc-gateway_*_linux_${ARCH}.tar.gz" -print)
 [[ ${#built_gateway_archives[@]} -eq 1 ]] || die "build deveria gerar exatamente um archive Gateway para $ARCH" 4
 [[ -f "${built_gateway_archives[0]}.sha256" ]] || die "build não gerou checksum do Gateway" 4
+
+log "montando kit final Gateway + Rapid SCADA"
+cp "$RAPID_DOWNLOAD" "$RAPID_ARCHIVE"
+[[ "$(sha256sum "$RAPID_ARCHIVE" | awk '{print $1}')" == "$RAPID_DOWNLOADED_SHA" ]] || die "Rapid SCADA foi alterado ao montar o kit" 3
+if [[ -n "$GATEWAY_CONFIG_URL" ]]; then
+  cp "$CUSTOM_CONFIG_DOWNLOAD" "$KIT_DIR/rc-gateway.json"
+fi
 
 log "validando kit completo antes de instalar"
 install_args=(--dir "$KIT_DIR" --rapid-version "$RAPID_VERSION")
