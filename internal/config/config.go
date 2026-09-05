@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -43,6 +44,7 @@ type Tunnel struct {
 	ID            string   `json:"id"`
 	Field         Endpoint `json:"field"`
 	Consumer      Endpoint `json:"consumer"`
+	PacketFraming string   `json:"packetFraming,omitempty"`
 	PairTimeoutS  int      `json:"pairTimeoutSeconds,omitempty"`
 	WriteTimeoutS int      `json:"writeTimeoutSeconds,omitempty"`
 	DrainTimeoutS int      `json:"drainTimeoutSeconds,omitempty"`
@@ -65,7 +67,10 @@ type SerialProvider struct {
 type USBHIDProvider struct {
 	ID             string `json:"id"`
 	Socket         string `json:"socket"`
-	Device         string `json:"device"`
+	Device         string `json:"device,omitempty"`
+	VendorID       string `json:"vendorId,omitempty"`
+	ProductID      string `json:"productId,omitempty"`
+	SerialNumber   string `json:"serialNumber,omitempty"`
 	MaxReportBytes int    `json:"maxReportBytes,omitempty"`
 	AllowWrite     bool   `json:"allowWrite,omitempty"`
 }
@@ -108,11 +113,15 @@ type Config struct {
 }
 
 func Load(path string) (Config, error) {
-	var cfg Config
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return cfg, err
+		return Config{}, err
 	}
+	return loadRaw(raw)
+}
+
+func loadRaw(raw []byte) (Config, error) {
+	var cfg Config
 	if err := json.Unmarshal(raw, &cfg); err != nil {
 		return cfg, err
 	}
@@ -168,6 +177,9 @@ func Load(path string) (Config, error) {
 			return cfg, err
 		}
 		if err := validateEndpoint(&t.Consumer, "tunnel "+t.ID+" consumer", cfg.Security.RequireAllowlist); err != nil {
+			return cfg, err
+		}
+		if err := validatePacketFraming(t); err != nil {
 			return cfg, err
 		}
 	}
@@ -275,6 +287,7 @@ func validateProviders(cfg *Config) error {
 		p.ID = strings.TrimSpace(p.ID)
 		p.Socket = strings.TrimSpace(p.Socket)
 		p.Device = strings.TrimSpace(p.Device)
+		p.SerialNumber = strings.TrimSpace(p.SerialNumber)
 		if p.ID == "" {
 			return fmt.Errorf("usbHidProvider[%d] requires id", i)
 		}
@@ -282,9 +295,32 @@ func validateProviders(cfg *Config) error {
 			return fmt.Errorf("usbHidProvider %s requires absolute socket", p.ID)
 		}
 		p.Socket = filepath.Clean(p.Socket)
-		p.Device = filepath.Clean(p.Device)
-		if !isHIDRawDevicePath(p.Device) {
-			return fmt.Errorf("usbHidProvider %s device must be /dev/hidrawN", p.ID)
+		var err error
+		if p.VendorID != "" {
+			p.VendorID, err = normalizeUSBID(p.VendorID)
+			if err != nil {
+				return fmt.Errorf("usbHidProvider %s invalid vendorId: %w", p.ID, err)
+			}
+		}
+		if p.ProductID != "" {
+			p.ProductID, err = normalizeUSBID(p.ProductID)
+			if err != nil {
+				return fmt.Errorf("usbHidProvider %s invalid productId: %w", p.ID, err)
+			}
+		}
+		if (p.VendorID == "") != (p.ProductID == "") {
+			return fmt.Errorf("usbHidProvider %s vendorId and productId must be configured together", p.ID)
+		}
+		if p.SerialNumber != "" && p.VendorID == "" {
+			return fmt.Errorf("usbHidProvider %s serialNumber requires vendorId/productId", p.ID)
+		}
+		if p.Device != "" {
+			p.Device = filepath.Clean(p.Device)
+			if !isHIDRawDevicePath(p.Device) {
+				return fmt.Errorf("usbHidProvider %s device must be /dev/hidrawN", p.ID)
+			}
+		} else if p.VendorID == "" {
+			return fmt.Errorf("usbHidProvider %s requires device or vendorId/productId selector", p.ID)
 		}
 		if p.MaxReportBytes <= 0 {
 			p.MaxReportBytes = 4096
@@ -320,35 +356,62 @@ func validateProviders(cfg *Config) error {
 }
 
 func validateEndpoint(ep *Endpoint, label string, requireAllowlist bool) error {
-	ep.Mode = strings.TrimSpace(ep.Mode)
-	ep.Network = strings.TrimSpace(ep.Network)
+	ep.Mode = strings.ToLower(strings.TrimSpace(ep.Mode))
+	ep.Network = strings.ToLower(strings.TrimSpace(ep.Network))
 	if ep.Network == "" {
 		ep.Network = "tcp"
 	}
 	switch ep.Network {
 	case "tcp":
 		return validateTCPEndpoint(ep, label, requireAllowlist)
-	case "unix":
+	case "unix", "unixpacket":
 		if tlsOptionsConfigured(ep.TLS) {
-			return fmt.Errorf("%s TLS options are not valid for unix endpoint", label)
+			return fmt.Errorf("%s TLS options are not valid for %s endpoint", label, ep.Network)
 		}
 		if len(ep.AllowedCIDRs) > 0 {
-			return fmt.Errorf("%s allowedCidrs is not valid for unix endpoint", label)
+			return fmt.Errorf("%s allowedCidrs is not valid for %s endpoint", label, ep.Network)
+		}
+		if ep.Mode != "listen" && ep.Mode != "connect" {
+			return fmt.Errorf("%s mode must be listen or connect", label)
 		}
 		path := ep.Address
 		if ep.Mode == "listen" {
 			path = ep.Bind
 		}
-		if ep.Mode != "listen" && ep.Mode != "connect" {
-			return fmt.Errorf("%s mode must be listen or connect", label)
-		}
 		if !filepath.IsAbs(path) {
-			return fmt.Errorf("%s unix path must be absolute", label)
+			return fmt.Errorf("%s %s path must be absolute", label, ep.Network)
+		}
+		path = filepath.Clean(path)
+		if ep.Mode == "listen" {
+			ep.Bind = path
+		} else {
+			ep.Address = path
 		}
 		return nil
 	default:
 		return fmt.Errorf("%s unsupported network %q", label, ep.Network)
 	}
+}
+
+func validatePacketFraming(t *Tunnel) error {
+	framing := strings.ToLower(strings.TrimSpace(t.PacketFraming))
+	if framing == "none" {
+		framing = ""
+	}
+	fieldPacket := t.Field.Network == "unixpacket"
+	consumerPacket := t.Consumer.Network == "unixpacket"
+	if fieldPacket == consumerPacket {
+		if framing != "" {
+			return fmt.Errorf("tunnel %s packetFraming is only valid when exactly one endpoint uses unixpacket", t.ID)
+		}
+		t.PacketFraming = ""
+		return nil
+	}
+	if framing != "length32be" {
+		return fmt.Errorf("tunnel %s mixes unixpacket with stream transport and requires packetFraming=length32be", t.ID)
+	}
+	t.PacketFraming = framing
+	return nil
 }
 
 func validateTCPEndpoint(ep *Endpoint, label string, requireAllowlist bool) error {
@@ -484,6 +547,19 @@ func isLoopbackBind(bind string) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
+}
+
+func normalizeUSBID(value string) (string, error) {
+	value = strings.ToLower(strings.TrimSpace(value))
+	value = strings.TrimPrefix(value, "0x")
+	if value == "" || len(value) > 4 {
+		return "", fmt.Errorf("must be a 16-bit hexadecimal value")
+	}
+	n, err := strconv.ParseUint(value, 16, 16)
+	if err != nil {
+		return "", fmt.Errorf("must be a 16-bit hexadecimal value")
+	}
+	return fmt.Sprintf("%04x", n), nil
 }
 
 func isHIDRawDevicePath(path string) bool {
