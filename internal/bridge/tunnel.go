@@ -12,7 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/paulohspdev-cmyk/ProjetoGerador/gateway-umbrella/internal/transport/netutil"
+	"github.com/paulohspred/Gateway/internal/transport/netutil"
 )
 
 type TLSOptions struct {
@@ -48,6 +48,7 @@ type PairInfo struct {
 }
 
 type Hooks struct {
+	OnReady           func(tunnelID string)
 	OnOpen            func(PairInfo)
 	OnBytes           func(pairID, direction string, n uint64)
 	OnClose           func(PairInfo, error)
@@ -94,6 +95,9 @@ func (t *Tunnel) Run(ctx context.Context) error {
 		return fmt.Errorf("tunnel %s consumer: %w", t.ID, err)
 	}
 	defer consumer.Close()
+	if t.Hooks.OnReady != nil {
+		t.Hooks.OnReady(t.ID)
+	}
 	for {
 		if ctx.Err() != nil {
 			return nil
@@ -150,6 +154,7 @@ func acquirePair(ctx context.Context, field, consumer connectionSource, fieldMod
 		return acquireConcurrent(ctx, field, consumer)
 	}
 }
+
 func acquireTriggered(ctx context.Context, firstName string, first connectionSource, secondName string, second connectionSource) (net.Conn, net.Conn, error) {
 	firstConn, err := first.Acquire(ctx)
 	if err != nil {
@@ -165,6 +170,7 @@ func acquireTriggered(ctx context.Context, firstName string, first connectionSou
 	}
 	return secondConn, firstConn, nil
 }
+
 func acquireConcurrent(ctx context.Context, field, consumer connectionSource) (net.Conn, net.Conn, error) {
 	type result struct {
 		name string
@@ -258,6 +264,7 @@ func copyDuplex(ctx context.Context, pairID string, field, consumer net.Conn, ho
 		}
 	}
 }
+
 func copyDirection(pairID, direction string, dst, src net.Conn, hooks Hooks, writeTimeout time.Duration) error {
 	buf := make([]byte, 64*1024)
 	for {
@@ -289,6 +296,7 @@ func copyDirection(pairID, direction string, dst, src net.Conn, hooks Hooks, wri
 		}
 	}
 }
+
 func writeAll(dst io.Writer, p []byte) (int, error) {
 	total := 0
 	for len(p) > 0 {
@@ -304,11 +312,13 @@ func writeAll(dst io.Writer, p []byte) (int, error) {
 	}
 	return total, nil
 }
+
 func closeWrite(conn net.Conn) {
 	if cw, ok := conn.(interface{ CloseWrite() error }); ok {
 		_ = cw.CloseWrite()
 	}
 }
+
 func normalizeCopyError(err error) error {
 	if err == nil || errors.Is(err, io.EOF) || errors.Is(err, io.ErrClosedPipe) || errors.Is(err, net.ErrClosed) || errors.Is(err, context.Canceled) {
 		return nil
@@ -329,6 +339,7 @@ func newSource(ctx context.Context, ep Endpoint) (connectionSource, error) {
 		return nil, fmt.Errorf("unsupported network %q", ep.Network)
 	}
 }
+
 func newTCPSource(ctx context.Context, ep Endpoint) (connectionSource, error) {
 	tlsConfig, err := buildTLSConfig(ep)
 	if err != nil {
@@ -410,6 +421,7 @@ func (s *listenSource) Acquire(ctx context.Context) (net.Conn, error) {
 		return conn, nil
 	}
 }
+
 func (s *listenSource) Close() error { return s.ln.Close() }
 
 type dialSource struct {
@@ -446,7 +458,9 @@ func (s *dialSource) Acquire(ctx context.Context) (net.Conn, error) {
 		}
 	}
 }
+
 func (s *dialSource) Close() error { return nil }
+
 func configureTCP(conn net.Conn, keepAlive time.Duration) {
 	tcpConn, ok := conn.(*net.TCPConn)
 	if !ok {
@@ -458,6 +472,7 @@ func configureTCP(conn net.Conn, keepAlive time.Duration) {
 		_ = tcpConn.SetKeepAlivePeriod(keepAlive)
 	}
 }
+
 func addr(a net.Addr) string {
 	if a == nil {
 		return ""
