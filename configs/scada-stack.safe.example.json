@@ -1,0 +1,11 @@
+{
+  "schema": 3,
+  "nodeId": "rc-gateway-scada-stack",
+  "admin": {"bind": "127.0.0.1:18080"},
+  "security": {
+    "requireAllowlist": true,
+    "commandPlaneEnabled": false
+  },
+  "limits": {"maxActivePairs": 1024},
+  "tunnels": []
+}

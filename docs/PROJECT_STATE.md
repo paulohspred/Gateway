@@ -13,6 +13,8 @@ NO TELEMETRY HISTORIAN
 
 RC Universal Gateway transports bytes, datagrams, frames and HID reports between field equipment and the software that understands the application protocol. It does not silently invent register maps, convert proprietary protocols, authorize industrial writes or act as a historian/broker/SCADA.
 
+Current product focus: a generator SCADA acquisition stack using **RC Gateway + Rapid SCADA v6.4.7**. Backend and frontend owned by this project remain a later phase.
+
 ## Repository and product identity
 
 Repository: `github.com/paulohspred/Gateway`.
@@ -34,6 +36,8 @@ The old `rc-gateway-umbrella` identity is not part of the canonical release. The
 Original RC Universal Gateway material is proprietary, **All Rights Reserved**. The controlling terms are in `LICENSE`; `NOTICE` makes explicit that public source visibility does not grant permission to use, execute, copy for reuse, modify, distribute, deploy, train models on, or create derivatives from the original project without prior written permission.
 
 Third-party software is not relicensed by those proprietary terms. Required notices are in `THIRD_PARTY_NOTICES.md`, and release artifacts contain a CycloneDX SBOM.
+
+Rapid SCADA remains an external third-party product under its own license. The Gateway release and the new stack installer do not embed Rapid SCADA source or binaries; the operator supplies the official Linux package separately.
 
 ## Implemented transport plane
 
@@ -109,9 +113,10 @@ The exact candidate commit must pass:
 17. shell syntax and malicious installer-archive tests;
 18. deterministic/reproducible Linux amd64 and arm64 release builds;
 19. SHA256 checksums and CycloneDX SBOM;
-20. installer dry-run against the real release archive;
-21. artifact content checks, including proprietary/third-party notices and Rapid SCADA production-readiness tooling;
-22. provenance attestation workflow for versioned releases.
+20. Gateway installer dry-run against the real release archive;
+21. Gateway + Rapid SCADA stack-installer positive dry-run and negative tests for wrong Rapid version, wrong Debian package identity, ambiguous Rapid package sets and bad Gateway checksum;
+22. artifact content checks, including proprietary/third-party notices, Rapid SCADA production-readiness tooling and the standalone stack deployment kit;
+23. provenance attestation workflow for versioned releases.
 
 Third-party GitHub Actions are pinned to immutable commit SHAs. Dependabot is configured to propose Go-module and GitHub Actions updates; updates still require the full validation chain.
 
@@ -133,20 +138,40 @@ Repository integration assets:
 
 - `docs/RAPID_SCADA_INTEGRATION.md`;
 - `docs/GENERATOR_SCADA_PRODUCTION_READINESS.md`;
+- `docs/SCADA_STACK_INSTALLER.md`;
 - `configs/rapid-scada.modbus-tcp.example.json`;
 - `configs/rapid-scada.rtu-over-tcp.example.json`;
 - `configs/rapid-scada.rs485-multidrop.example.json`;
+- `configs/scada-stack.safe.example.json`;
 - `internal/bridge/rapid_scada_test.go`;
 - `scripts/rapid-scada-acceptance.sh`;
-- `scripts/rapid-scada-production-acceptance.sh`.
+- `scripts/rapid-scada-production-acceptance.sh`;
+- `scripts/install-scada-stack.sh`;
+- `scripts/test-scada-stack-installer.sh`.
 
 The dedicated software contract covers Modbus TCP read/write/exception frames, Modbus RTU CRC preservation, five Unit IDs on one shared stream, TCP fragmentation/coalescing and 1,000 sustained polling cycles. These tests prove byte-stream behavior; they do not claim a semantic Modbus implementation inside the Gateway.
 
 The upstream Rapid SCADA `scadacomm6.service` baseline has `Type=notify`/`Restart=always` and no explicit `User=`. Non-root hardening must be tested with the real installation before it can become a production invariant; the production preflight can require this using `RAPID_SCADA_REQUIRE_NON_ROOT=1`.
 
-The last fully green automated software checkpoint before this increment is `0bd0c129ba2bd01b0dde5f4f57d0d6d47b7c1647` (Gateway CI `33985829136`, CodeQL `33985829030`). The new Rapid SCADA production-readiness increment must pass the complete CI/CodeQL chain on its exact HEAD before it inherits `software_field_test_ready` status.
+The upstream Rapid SCADA v6.4.7 Webstation unit starts with `--urls=http://0.0.0.0:10008`. The stack installer intentionally overrides that service to `127.0.0.1:10008` and configures Nginx on `127.0.0.1:80` only. This prevents accidental remote exposure before Rapid SCADA credentials and the final TLS/reverse-proxy policy are configured.
 
-Actual Rapid SCADA interoperability remains a VM acceptance gate until `scadacomm6.service` is run against the exact Gateway artifact. Physical generator/control-device behavior remains HIL-specific.
+## One-directory stack installer contract
+
+The standalone deployment kit is designed for a clean Ubuntu Server 24.04 VM. The CI artifact contains both Gateway architecture archives, their checksums, `install-scada-stack.sh`, `rc-gateway.safe.json` and `SCADA_STACK_INSTALLER.md`. Rapid SCADA itself remains separate; the operator places exactly one official `rapidscada_*_all.deb` or supported Linux ZIP in the same directory.
+
+Running:
+
+```bash
+sudo bash install-scada-stack.sh
+```
+
+performs fail-closed artifact selection, Gateway SHA256 verification, archive-type/path validation, embedded Gateway installer dry-run, Rapid Debian package identity/version/architecture validation, dependency installation from already-configured APT repositories, ASP.NET Core Runtime 8 detection/installation, Rapid SCADA installation, safe loopback Webstation/Nginx configuration, Gateway health-gated installation, systemd enablement and post-install health checks.
+
+If no `rc-gateway.json` is present, the installer uses the safe zero-tunnel baseline. It does not invent a controller topology or expose a field listener automatically.
+
+The stack installer records installed versions and source hashes in `/var/lib/rc-scada-stack/install-state.env`. A Rapid package checksum may be supplied as a sibling `.sha256` or pinned with `RC_SCADA_RAPID_SHA256`; absence is warned because a local hash alone is not publisher authenticity evidence.
+
+The installer targets fresh deployment by default. Existing Gateway/Rapid installations require explicit `--upgrade` after backup and an authorized maintenance window. Existing non-default Nginx sites are not overwritten unless the operator explicitly allows that condition.
 
 ## Configuration compatibility
 
@@ -156,16 +181,30 @@ The policy is documented in `CONFIGURATION_COMPATIBILITY.md`. Before v1, incompa
 
 ## Release contract
 
-Canonical artifacts are named:
+Canonical Gateway artifacts are named:
 
 ```text
 rc-gateway_<version>_linux_amd64.tar.gz
 rc-gateway_<version>_linux_arm64.tar.gz
 ```
 
-A release includes the binary, validated examples, systemd unit, install/rollback/diagnostic/VM scripts, Rapid SCADA acceptance/preflight tooling, generator-SCADA readiness documentation, operational documentation, `LICENSE`, `NOTICE`, `THIRD_PARTY_NOTICES.md`, `MANIFEST`, `VERSION` and SBOM. The manifest identifies `product=rc-gateway` and `license=Proprietary-All-Rights-Reserved`.
+A Gateway release includes the binary, validated examples, systemd unit, install/rollback/diagnostic/VM scripts, Rapid SCADA acceptance/preflight/stack-installer tooling, generator-SCADA readiness documentation, operational documentation, `LICENSE`, `NOTICE`, `THIRD_PARTY_NOTICES.md`, `MANIFEST`, `VERSION` and SBOM. The manifest identifies `product=rc-gateway` and `license=Proprietary-All-Rights-Reserved`.
 
-Version-tag builds can be provenance-attested through GitHub OIDC. SHA256 is an integrity checksum; provenance/attestation is the publisher/build-chain evidence.
+The CI artifact also publishes top-level deployment-kit files:
+
+```text
+install-scada-stack.sh
+rc-gateway.safe.json
+SCADA_STACK_INSTALLER.md
+```
+
+Rapid SCADA is intentionally not embedded in those Gateway artifacts. Version-tag builds can be provenance-attested through GitHub OIDC. SHA256 is an integrity checksum; provenance/attestation is the publisher/build-chain evidence.
+
+## Current validation checkpoint
+
+The previous exact HEAD `fceb0982d29b3fd5f942238d8a5f2e1d327331bd` passed Gateway CI `33987179973` and CodeQL `33987179972` and was `software_field_test_ready` for the Gateway + Rapid SCADA transport contract.
+
+The new one-directory stack-installer increment must pass the complete CI and CodeQL chain on its own exact HEAD before it inherits that status. Repository-only tests validate packaging and dry-run behavior; the real Rapid SCADA `.deb`, systemd services, Nginx override and ASP.NET runtime still require the clean-VM acceptance run.
 
 ## Current promotion rule
 
@@ -185,15 +224,17 @@ No state is inferred from an older successful commit. `software_field_test_ready
 
 ### Repository-owner administration
 
-The `main` branch is currently not protected by GitHub branch protection/rulesets according to the last repository check. The connected integration can verify this state but cannot write repository administration. Before treating `main` as production history, apply and verify the settings in `GITHUB_PROTECTION.md`.
+The `main` branch protection/ruleset must be confirmed by the repository owner according to `GITHUB_PROTECTION.md` before treating `main` as protected production history. The connected integration can verify some repository state but cannot write administrative branch-protection settings.
 
 Because the repository is public, third parties can technically read/clone the source even though the proprietary license grants no permission to reuse it. If the requirement is to prevent source access rather than merely prohibit licensed use, the repository owner must change visibility to private.
 
 ### VM acceptance
 
-Install the exact CI/release artifact on a clean Ubuntu Server 24.04 amd64 VM and execute `VM_ACCEPTANCE.md` / `scripts/vm-acceptance.sh`, including reboot persistence, watchdog, failure recovery, upgrade, rollback, negative config tests, resource observation and a 24-hour soak. A 7-day soak is the target before broad production rollout.
+Install the exact CI/release artifact on a clean Ubuntu Server 24.04 amd64 VM. The preferred initial path is now the one-directory stack installer, followed by `VM_ACCEPTANCE.md` / `scripts/vm-acceptance.sh`.
 
-When Rapid SCADA is part of the deployment, install/configure the real Rapid SCADA v6.4.7 and execute both `scripts/rapid-scada-acceptance.sh` and `scripts/rapid-scada-production-acceptance.sh`. The production preflight requires explicit consumer ports, checks loopback exposure, time synchronization, disk headroom, restart counters and real session recovery. Disruptive restart testing is opt-in and must run only in an authorized VM/window.
+The VM acceptance must prove the actual Rapid SCADA v6.4.7 package installation, ASP.NET Core Runtime 8, `scadaagent6`, `scadaserver6`, `scadacomm6`, `scadaweb6`, Nginx, Gateway service, loopback-only Webstation exposure, reboot persistence and the stack state record.
+
+After configuring a real Rapid communication line, execute both `scripts/rapid-scada-acceptance.sh` and `scripts/rapid-scada-production-acceptance.sh`. The production preflight requires explicit consumer ports, checks loopback exposure, time synchronization, disk headroom, restart counters and real session recovery. Disruptive restart testing is opt-in and must run only in an authorized VM/window.
 
 ### Hardware-in-the-loop
 
