@@ -1,6 +1,6 @@
-# RC Universal Gateway — estado do projeto e handoff obrigatório
+# RC Universal Gateway — estado do projeto e handoff
 
-> **LEIA ESTE ARQUIVO PRIMEIRO antes de modificar `gateway-umbrella/`.** Toda alteração no Gateway deve atualizar este arquivo no mesmo ciclo.
+> Leia este arquivo antes de alterar runtime, segurança, release ou contratos de transporte. Mudanças técnicas relevantes devem atualizar este documento no mesmo PR/conjunto de mudanças.
 
 ## Decisão fixa
 
@@ -11,118 +11,154 @@ NO DEVICE MEMORY DATABASE
 NO TELEMETRY HISTORIAN
 ```
 
-O Gateway é uma ponte universal de conectividade. Rapid SCADA, FUXA, ThingsBoard, software do fabricante ou outro driver interpreta registradores e protocolos de aplicação.
+O Gateway é uma ponte universal de conectividade. Rapid SCADA, FUXA, software do fabricante ou outro driver interpreta registradores e protocolos de aplicação.
 
-## Status atual
+## Repositório standalone
 
-O RC Universal Gateway atingiu o estado **software field-test-ready** nos gates automatizáveis do produto.
+O produto agora vive diretamente na raiz de `github.com/paulohspred/Gateway`.
 
-Checkpoint de runtime/release validado: `ecb9ee0cfd8c3a3c96125230cd07a4bbd8d20987`.
+Não existe mais a camada de diretório `gateway-umbrella/`. O módulo Go é:
 
-Nesse checkpoint, o workflow `Gateway Umbrella` passou integralmente:
+```text
+github.com/paulohspred/Gateway
+```
 
-- Canonical project state;
-- Bridge Core Go: format, vet, testes, race detector, build e configuração de produção;
-- Stress and leak gate: 1.000 pares duplex simultâneos + 1.000 ciclos TCP churn;
-- Impairment and mini-soak gate;
-- Release and supply-chain gate: vulnerability scan, shell syntax, build reproduzível, SHA256, SBOM, dry-run do instalador e artifact de release.
+Estrutura principal:
 
-Também passaram no mesmo checkpoint:
+```text
+cmd/ internal/ configs/ docs/ scripts/ systemd/ .github/
+```
 
-- CI geral;
-- Quality and Security;
-- Gateway Source Bundle.
+## Estado deste ciclo
 
-O artifact de release candidate foi gerado pelo workflow para o mesmo HEAD. Este documento apenas registra o fechamento do estado validado; qualquer alteração futura de runtime/release deve repetir os gates antes de promover novo checkpoint.
+Este ciclo executa reorganização standalone e hardening antes de promover um novo checkpoint. Até o GitHub Actions do novo repositório ficar integralmente verde, o HEAD desta branch deve ser tratado como **candidate / validation pending**.
 
-## Checkpoints verdes
+O último código de origem já havia sido validado no monorepo anterior, mas essa evidência não substitui repetir os gates depois das mudanças de segurança e lifecycle feitas aqui.
 
-- `249a7f0d55c840e5e95764468a6400db8a401fea`: limpeza bridge-first.
-- `9dc17491e370a59926d9069c898c0e3bba8b8171`: hardening TCP.
-- `52b2d76665fb73ac212e5cf085551aa7c658c2e1`: TLS/mTLS + Unix + RST/half-close.
-- `ffa2d548fb14899aad4052cc17dbe1c9d53dab92`: Serial RS232/RS422/RS485.
-- `905f82c7036bb00c7539c26ce12ad0f55db5ba48`: UDP datagram/session bridge.
-- `0016e2a629e2169024bfea8fd1fb66d7ec0fe1f4`: SocketCAN/CAN-FD software checkpoint.
-- `5aa5eb721c76d611f25aac8d3479b336e7475ce4`: stress/leak; 1.000 pares + 1.000 churn.
-- `5dc90212cb6f72138b25e51aedf30a6dcf5f150f`: impairment + mini-soak.
-- `a81db7e9cce5db4f4c3107b9ff7ec76ca76678db`: configuração estrita/`--check-config`.
-- `069a5d786d83e621e74328488e882d8c49165594`: release/supply-chain completo com scanner compatível com Go 1.27.1.
-- `ecb9ee0cfd8c3a3c96125230cd07a4bbd8d20987`: checkpoint integrado atual; Gateway Umbrella, CI, Quality/Security e Source Bundle verdes.
+### Mudanças realizadas
 
-## Transportes validados em software
+- conteúdo do produto promovido para a raiz do repositório;
+- module/import path migrado para `github.com/paulohspred/Gateway`;
+- scripts restaurados como executáveis;
+- GitHub Actions standalone restaurado;
+- registry de métricas passa a tirar snapshot e libera lock antes de I/O HTTP;
+- admin HTTP passa a aceitar somente loopback pela configuração de produção;
+- admin recebe timeouts completos, limite de headers, GET-only e `nosniff`;
+- opções TLS são fail-closed: configuração TLS com `enabled=false` é rejeitada;
+- listeners TCP/UDP públicos exigem allowlist independentemente do flag legado;
+- caminhos de sockets de providers são canonicalizados antes de comparação;
+- IDs que colidem depois da sanitização de métricas são rejeitados;
+- provider CAN não remove arquivo regular em caminho de socket e valida existência da interface no startup;
+- providers serial/Unix criam diretório de socket com permissões restritas e sockets `0660`;
+- expiração UDP revalida `lastSeen` e toca sessões existentes sob lock;
+- runtime só marca `/readyz` após todos os componentes configurados inicializarem sua camada local;
+- erro fatal de componente cancela o runtime interno e aguarda goroutines antes de retornar;
+- allowlist normaliza prefixos e IPv4-mapped peer addresses;
+- documentação e catálogo foram alinhados ao estado bridge-first atual.
+
+## Invariantes de segurança
+
+- `commandPlaneEnabled=true` é rejeitado;
+- CAN TX permanece `allowTransmit=false` por padrão;
+- admin HTTP é loopback-only nesta release;
+- listener TCP/UDP não-loopback sem `allowedCidrs` é inválido;
+- TLS listener exige chave/certificado;
+- mTLS listener exige CA;
+- opções TLS não podem ficar silenciosamente configuradas com TLS desligado;
+- Unix/provider socket nunca pode sobrescrever arquivo comum;
+- IDs e recursos físicos não podem colidir silenciosamente;
+- nenhum payload pode ser alterado silenciosamente;
+- nenhum recurso deve crescer sem limite.
+
+## Transportes implementados
 
 - TCP listen/connect;
 - reverse TCP de modem;
 - TCP direto por IP/VPN;
 - TLS 1.3 e mTLS;
 - Unix sockets;
-- Serial RS232/RS422/RS485 raw;
+- serial RS232/RS422/RS485 raw;
 - UDP preservando datagramas e sessões por peer;
 - SocketCAN/CAN-FD preservando frames do ABI Linux;
-- CAN TX bloqueado por padrão (`allowTransmit=false`);
-- pair timeout, slow-peer/write timeout, half-close drain, keepalive, NODELAY e CIDR allowlist;
-- métricas/sessões por transporte e direção;
-- churn/reconnect, RST, half-close, concorrência, leak, impairment e mini-soak automatizados.
+- pair timeout, write timeout, half-close drain, keepalive, NODELAY e CIDR allowlist;
+- métricas e sessões por transporte/direção.
 
-## Configuração de produção
+## Semântica de readiness
 
-- JSON estrito: campos desconhecidos e documentos extras são rejeitados;
-- IDs únicos entre providers/túneis;
-- colisões TCP/admin e UDP detectadas antes do runtime;
-- colisão Unix/provider rejeitada;
-- porta serial física duplicada rejeitada;
-- no máximo um túnel consumidor por socket de provider físico;
-- `--check-config` valida sem abrir transports;
-- `--version` expõe versão/commit/build;
-- exemplos `configs/*.json` são validados no CI.
+`/readyz` só fica verde quando:
+
+- admin HTTP fez bind;
+- cada stream tunnel criou suas sources/listeners;
+- cada UDP tunnel fez bind e resolveu target;
+- cada serial provider publicou seu socket local;
+- cada CAN provider encontrou a interface configurada e publicou seu socket local.
+
+Readiness **não** significa que o equipamento físico respondeu. Serial é aberto quando uma sessão efetivamente chega e CAN raw é aberto quando um consumidor conecta. HIL continua obrigatório.
+
+## Gates automatizados do novo repositório
+
+`.github/workflows/ci.yml` deve ficar verde no mesmo HEAD para promover a branch:
+
+1. handoff/documentação;
+2. `gofmt`;
+3. `go vet`;
+4. testes unitários/integrados com shuffle e cobertura;
+5. race detector;
+6. build e validação de todos `configs/*.json`;
+7. 1.000 pares duplex simultâneos;
+8. 1.000 ciclos TCP churn + leak gate;
+9. impairment + mini-soak;
+10. `govulncheck`;
+11. shell syntax;
+12. build Linux amd64/arm64 reproduzível;
+13. SHA256;
+14. SBOM CycloneDX;
+15. dry-run real do instalador;
+16. artifact de release;
+17. provenance attestation em release promovida para `main`.
+
+O checkpoint standalone só deve ser registrado abaixo depois que esses jobs terminarem com sucesso.
 
 ## Release industrial standalone
 
-- raiz `/opt/rc-gateway-umbrella`;
+- raiz de instalação `/opt/rc-gateway-umbrella`;
 - releases imutáveis em `releases/<versão>`;
 - symlinks `current` e `previous`;
 - systemd com `ExecStartPre --check-config`;
-- build Linux amd64/arm64 com `-trimpath` e metadados embutidos;
+- Linux amd64/arm64 com `-trimpath` e metadados embutidos;
 - timestamp derivado do commit e pacotes reprodutíveis;
-- SHA256;
-- SBOM CycloneDX;
-- `govulncheck` pinado na revisão upstream `8fcedea455d953a0f8470e1f41420bb6f2e72665`, compatível com Go 1.27.1;
-- instalador transacional com checksum, proteção contra path traversal, staging e validação de config;
+- SHA256 + SBOM;
+- configuração validada antes da troca;
 - troca atômica de release;
 - readiness após restart;
-- rollback automático em falha;
-- rollback manual com health gate e autorreversão;
-- dry-run contra pacote real no CI;
-- comparação byte-a-byte de duas builds idênticas;
-- artifact de release candidate no CI.
+- rollback automático e rollback manual com health gate.
 
-## Documentação operacional final
+## Checkpoint standalone atual
 
-- `docs/RUNBOOK.md`: instalação, atualização, rollback, observabilidade, segurança, soak, HIL e diagnóstico;
-- `docs/COMPATIBILITY_MATRIX.md`: meios/protocolos e limites de suporte;
-- `docs/PRODUCTION_MATRIX.md`: gates automatizáveis e físicos;
-- `docs/ARCHITECTURE.md`: arquitetura bridge-first;
-- `docs/PROJECT_STATE.md`: handoff canônico obrigatório.
+**Pendente:** preencher com o SHA do HEAD somente depois do workflow `Gateway CI` ficar integralmente verde. Não promover documentação para “software field-test-ready” antes disso.
 
-## O que ainda falta para “production validated”
-
-Não falta desenvolvimento de software obrigatório para iniciar homologação em campo. Restam gates físicos/HIL:
+## Gates físicos restantes para production validated
 
 1. PUSR/USR real em reverse TCP → Gateway → Rapid/FUXA/consumidor;
 2. dispositivo direto por IP/VPN;
-3. RS232/RS422/RS485 reais;
-4. UDP real quando aplicável;
-5. CAN e CAN-FD físicos;
-6. VPN/4G/MikroTik e power-cycle/reconnect reais;
-7. `tc netem`/impairment de rede em ambiente HIL;
-8. soak mínimo 24 h, alvo 7 dias;
-9. rollback em máquina de homologação.
+3. RS232 real;
+4. RS422 real quando aplicável;
+5. RS485 real, incluindo direção/half-duplex do hardware;
+6. UDP real quando aplicável;
+7. CAN clássico físico;
+8. CAN-FD físico;
+9. VPN/4G/MikroTik real;
+10. power-cycle/reconnect de modem/controladora;
+11. `tc netem`/impairment em HIL;
+12. soak mínimo de 24 h, alvo de 7 dias;
+13. rollback em máquina de homologação.
 
-`scripts/run-soak.sh` aceita de 1 segundo a 604800 segundos (7 dias).
+`scripts/run-soak.sh` aceita de 1 a 604800 segundos.
 
-## Regra de produção
+## Regra de promoção
 
-- **software field-test-ready** = todos os gates automatizáveis do produto, release/supply-chain e documentação verdes;
-- **production validated** = somente após HIL/soak físico da topologia real.
+- **validation pending**: código mudou e os novos gates ainda não fecharam;
+- **software field-test-ready**: todos os gates automatizados/release/supply-chain do mesmo HEAD estão verdes;
+- **production validated**: somente após HIL e soak físico da topologia real.
 
-Não reintroduzir polling, mapas de memória ou historian no core. Nenhum payload pode ser alterado silenciosamente e nenhum recurso pode crescer sem limite. Suporte a transporte nunca libera automaticamente o Command Plane.
+Não reintroduzir polling, mapas de memória, historian ou command plane genérico no core.
