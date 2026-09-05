@@ -42,6 +42,39 @@ func TestResolveHIDRawDeviceUsesVIDPIDAndSerial(t *testing.T) {
 	}
 }
 
+func TestResolveHIDRawDeviceTracksReenumerationByStableIdentity(t *testing.T) {
+	classRoot, deviceRoot := installFakeHIDRoots(t)
+	cfg := Config{
+		ID:           "usb",
+		Socket:       "/run/rc-gateway/usb.sock",
+		VendorID:     "1234",
+		ProductID:    "5678",
+		SerialNumber: "SERIAL-A",
+	}
+	writeFakeHID(t, classRoot, "hidraw0", "1234", "5678", "SERIAL-A", "Controller")
+
+	first, _, err := resolveHIDRawDevice(cfg)
+	if err != nil {
+		t.Fatalf("initial resolve: %v", err)
+	}
+	if first != filepath.Join(deviceRoot, "hidraw0") {
+		t.Fatalf("initial device=%q", first)
+	}
+
+	if err := os.RemoveAll(filepath.Join(classRoot, "hidraw0")); err != nil {
+		t.Fatal(err)
+	}
+	writeFakeHID(t, classRoot, "hidraw7", "1234", "5678", "SERIAL-A", "Controller")
+
+	second, _, err := resolveHIDRawDevice(cfg)
+	if err != nil {
+		t.Fatalf("resolve after re-enumeration: %v", err)
+	}
+	if second != filepath.Join(deviceRoot, "hidraw7") {
+		t.Fatalf("re-enumerated device=%q", second)
+	}
+}
+
 func TestResolveHIDRawDeviceRejectsAmbiguousSelector(t *testing.T) {
 	classRoot, _ := installFakeHIDRoots(t)
 	writeFakeHID(t, classRoot, "hidraw0", "1234", "5678", "SERIAL-A", "Controller A")
