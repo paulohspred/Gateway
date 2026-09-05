@@ -10,8 +10,8 @@ import (
 	"runtime"
 	"syscall"
 
-	"github.com/paulohspdev-cmyk/ProjetoGerador/gateway-umbrella/internal/config"
-	"github.com/paulohspdev-cmyk/ProjetoGerador/gateway-umbrella/internal/gateway"
+	"github.com/paulohspred/Gateway/internal/config"
+	"github.com/paulohspred/Gateway/internal/gateway"
 )
 
 var (
