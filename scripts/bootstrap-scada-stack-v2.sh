@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 GATEWAY_REPO="${RC_SCADA_GATEWAY_REPO:-paulohspred/Gateway}"
-GATEWAY_REF="${RC_SCADA_GATEWAY_REF:-ac5c98e047e752539e7844dfa7d9d3d69565a6e6}"
+GATEWAY_REF="${RC_SCADA_GATEWAY_REF:-8f8d2560832be534ba1f9c5d58d3c1afacba8189}"
 RAPID_VERSION="${RC_SCADA_RAPID_VERSION:-6.4.7}"
 RAPID_URL="${RC_SCADA_RAPID_URL:-https://rapidscada.org/download/rapidscada_${RAPID_VERSION}_linux_en.zip}"
 # Frozen checksum observed for the official Rapid SCADA 6.4.7 Linux package used in this acceptance cycle.
