@@ -23,7 +23,9 @@ Antes de instalar, reiniciar ou alterar topologia:
   --config /etc/rc-gateway-umbrella.json
 ```
 
-A configuração é fail-closed: JSON desconhecido/trailing é rejeitado; IDs/binds/sockets conflitantes são rejeitados; admin deve ser loopback; listeners TCP/UDP não-loopback exigem `allowedCidrs`; opções TLS exigem `tls.enabled=true`; mTLS listener exige CA.
+A configuração é fail-closed: JSON desconhecido/trailing é rejeitado; IDs/binds/sockets conflitantes são rejeitados; admin deve ser loopback; listeners TCP/UDP não-loopback exigem `allowedCidrs`; opções TLS exigem `tls.enabled=true`; mTLS listener exige CA; provider sockets devem usar o network correto; e `unixpacket`↔stream exige `packetFraming: "length32be"`.
+
+`LoadStrict` valida a mesma fotografia de bytes lida do arquivo, evitando que uma segunda leitura use conteúdo diferente durante o check.
 
 ## Construir release
 
@@ -101,12 +103,90 @@ curl -fsS http://127.0.0.1:18080/sessions
 curl -fsS http://127.0.0.1:18080/metrics
 ```
 
-`readyz=ready` significa que admin/listeners/providers locais inicializaram. Não significa que PLC, modem, porta serial ou equipamento remoto respondeu. Esse estado é comprovado somente por HIL.
+`readyz=ready` significa que admin/listeners/providers locais inicializaram. Para HID, também significa que o equipamento configurado foi resolvido e o character device foi validado. Não significa que PLC, modem ou protocolo de aplicação respondeu. Esse estado é comprovado somente por HIL.
+
+## USB HID — descoberta e permissão segura
+
+Com a controladora conectada ao Linux:
+
+```bash
+bash scripts/probe-usb-hid.sh
+```
+
+Registre pelo menos:
+
+```text
+device
+vendor_id
+product_id
+hid_serial / usb_serial
+hid_name / usb_product_name
+interface
+report_descriptor_bytes
+report_descriptor_sha256
+permissions
+```
+
+Em produção, prefira `vendorId` + `productId` + `serialNumber` quando o equipamento fornecer serial estável. `/dev/hidrawN` pode mudar após boot/hotplug.
+
+Exemplo de configuração — substitua pelos valores reais do probe:
+
+```json
+{
+  "id": "comap-usb",
+  "socket": "/run/rc-gateway/comap.hid.sock",
+  "vendorId": "1234",
+  "productId": "abcd",
+  "serialNumber": "SERIAL-REAL",
+  "maxReportBytes": 4096,
+  "allowWrite": false
+}
+```
+
+Os IDs acima são apenas exemplo de formato.
+
+### udev / least privilege
+
+Não rode o Gateway como root apenas para acessar hidraw. Depois de obter VID/PID reais, crie uma regra específica para a controladora, por exemplo:
+
+```text
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1234", ATTRS{idProduct}=="abcd", GROUP="rc-gateway", MODE="0660"
+```
+
+Substitua os IDs de exemplo. Salve a regra em `/etc/udev/rules.d/`, recarregue as regras e reconecte o equipamento:
+
+```bash
+sudo udevadm control --reload-rules
+sudo udevadm trigger
+```
+
+Depois confirme que o nó correto pode ser lido pelo serviço `rc-gateway`. Evite regra genérica que dê acesso a todos os dispositivos `hidraw` do host.
+
+### Socket local do provider
+
+O provider HID publica um socket `unixpacket` em `/run/rc-gateway` com modo `0660`. Um adapter local executado sob outro usuário precisa de acesso ao grupo apropriado; não relaxe o socket para world-writable.
+
+## `unixpacket` e framing para TCP
+
+USB HID e CAN usam `unixpacket` porque a fronteira da mensagem importa. Se um adapter compatível precisar ficar do outro lado de TCP, configure explicitamente:
+
+```json
+"packetFraming": "length32be"
+```
+
+No stream, cada mensagem é:
+
+```text
+4 bytes uint32 big-endian length | payload original
+```
+
+Esse framing **não é Modbus**. Rapid SCADA/FUXA/driver comum só deve receber esse fluxo se existir um adapter que retire/entenda o envelope e implemente o protocolo de aplicação necessário.
 
 ## Segurança de campo
 
 - `commandPlaneEnabled=true` é rejeitado;
 - CAN TX é bloqueado por padrão (`allowTransmit=false`);
+- USB HID write é bloqueado por padrão (`allowWrite=false`);
 - listeners de dados não-loopback exigem allowlist CIDR;
 - prefira VPN/firewall de borda para equipamentos legados sem TLS;
 - use TLS 1.3/mTLS quando a topologia suportar;
@@ -116,7 +196,7 @@ curl -fsS http://127.0.0.1:18080/metrics
 
 ## Soak e impairment
 
-CI executa mini-soak automatizado. Na VM de homologação:
+CI executa mini-soak automatizado. Na VM de homologação, usando o checkout do projeto:
 
 ```bash
 bash scripts/run-soak.sh 86400   # 24 h
@@ -132,6 +212,9 @@ Adicionar `tc netem` em ambiente HIL para perda, jitter, atraso, duplicação e 
 - RS232 real;
 - RS422 real quando aplicável;
 - RS485 real, incluindo direção/half-duplex;
+- USB HID real: VID/PID/serial, report descriptor, report IDs/tamanhos, leitura, escrita somente quando autorizada, unplug/replug e power-cycle;
+- InteliLite 4 AMF 9 real: captura controlada da sessão do InteliConfig/consumidor para determinar protocolo de aplicação e necessidade de adapter ComAp Direct;
+- permissões udev do HID sem executar o daemon como root;
 - UDP real quando aplicável;
 - CAN clássico físico;
 - CAN-FD físico;
@@ -147,11 +230,17 @@ Somente após esses gates físicos o estado pode mudar de **software field-test-
 
 **Gateway não sobe:** execute `--check-config` e depois consulte `journalctl`.
 
-**`healthz` responde e `readyz` não:** algum componente configurado não inicializou localmente; verifique logs, binds, sockets e interface CAN.
+**`healthz` responde e `readyz` não:** algum componente configurado não inicializou localmente; verifique logs, binds, sockets, HID configurado e interface CAN.
 
 **PUSR conectado mas consumidor não comunica:** confirme allowlist, pareamento, porta do consumidor, firewall/VPN e logs. Não modifique payload para “corrigir” protocolo.
 
 **Serial sem comunicação:** confirme `/dev/tty*`, grupo `dialout`, baud/data/parity/stop bits e direção RS485 do adaptador.
+
+**USB HID não sobe:** execute o probe, confirme se o seletor encontra exatamente uma unidade, valide udev/permissões, confira se o nó é character device e não symlink. Se o transporte sobe mas não há leitura útil, o problema pode estar no protocolo ComAp Direct/adapter, não no hidraw.
+
+**Erro `requires network unixpacket`:** o túnel está tentando consumir um provider packet com Unix stream. Use `network: "unixpacket"`.
+
+**Erro exigindo `packetFraming=length32be`:** o túnel mistura packet e stream. Adicione framing somente se o consumidor remoto conhecer o envelope; não o use para fingir que HID virou Modbus.
 
 **CAN sem comunicação:** confirme `ip -details link show`, interface UP, bitrate/FD e transceiver. J1939/CANopen são interpretados pelo consumidor, não pelo Gateway.
 
