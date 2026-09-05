@@ -1,10 +1,10 @@
-# RC Universal Gateway — Architecture
+# RC Universal Gateway — Arquitetura
 
-> Handoff canônico: [`PROJECT_STATE.md`](./PROJECT_STATE.md).
+> Estado/handoff canônico: [`PROJECT_STATE.md`](./PROJECT_STATE.md).
 
 ## Missão
 
-O RC Universal Gateway é uma **ponte universal de conectividade**. Ele conecta dois endpoints e transporta bytes nos dois sentidos sem precisar entender a semântica do equipamento.
+O RC Universal Gateway é uma ponte universal de conectividade industrial. Ele transporta dados entre o campo e um consumidor sem incorporar semântica de dispositivo.
 
 ```text
 BRIDGE FIRST
@@ -13,72 +13,94 @@ NO DEVICE MEMORY DATABASE
 NO TELEMETRY HISTORIAN
 ```
 
-## Unidade fundamental: Tunnel
+## Modelos de transporte
+
+### Stream
 
 ```text
-FIELD ENDPOINT  <======== raw duplex bytes ========>  CONSUMER ENDPOINT
+FIELD ENDPOINT <======== raw duplex bytes ========> CONSUMER ENDPOINT
 ```
 
-Os dois lados são simétricos e podem ser `listen` ou `connect`. No milestone atual, o core suporta TCP.
+Implementações atuais:
 
-### PUSR TCP Client + Rapid
+- TCP `listen`/`connect`;
+- TLS 1.3/mTLS sobre TCP;
+- Unix stream sockets;
+- RS232/RS422/RS485 expostos por provider Unix local.
+
+Em `listen ↔ connect`, a conexão inbound é o trigger para discar o lado `connect`. Em `listen ↔ listen`, o runtime pareia uma conexão de cada lado.
+
+### Datagram
+
+UDP possui runtime próprio para preservar fronteiras de datagrama. Cada peer inbound recebe sessão isolada para o endpoint target, limitada por `maxSessions`, `maxDatagramBytes` e `idleTimeoutSeconds`.
+
+### Frame
+
+SocketCAN/CAN-FD usa `unixpacket` entre consumidor local e provider CAN para preservar a fronteira de cada frame do ABI Linux. `allowTransmit=false` mantém escrita em CAN bloqueada por padrão.
+
+## Fluxos típicos
+
+### PUSR reverso + Rapid
 
 ```text
-Controladora -> PUSR -> Internet -> MikroTik -> Gateway field listen :15003
-                                                     ||
-                                                raw tunnel
-                                                     ||
-                                       consumer listen :25003 <- Rapid
+Controladora -> PUSR -> rede/VPN -> Gateway field listen :15003
+                                      || raw stream
+                           consumer listen :25003 <- Rapid
 ```
 
 ### Equipamento direto por VPN/IP
 
 ```text
 Gateway field connect -> 10.60.20.222:502
-         ||
-     raw tunnel
-         ||
-consumer listen :25020 <- Rapid
+         || raw stream
+consumer listen :25020 <- Rapid/FUXA
 ```
-
-Em `listen ↔ connect`, o peer inbound é o trigger: só depois dele existir o Gateway disca o outro lado.
 
 ## Responsabilidades do core
 
-1. abrir/aceitar transporte;
-2. parear endpoints;
-3. aplicar segurança de conexão/allowlist;
-4. rotear túnel;
-5. encaminhar bytes sem modificação;
-6. reconnect/lifecycle;
-7. health, readiness, sessões, logs e métricas operacionais.
+1. validar configuração antes de abrir recursos;
+2. abrir/aceitar transports;
+3. aplicar allowlist/TLS quando configurado;
+4. parear endpoints ou manter sessão por peer;
+5. preservar bytes/datagramas/frames;
+6. controlar reconnect, deadlines e shutdown;
+7. manter sessões e métricas operacionais;
+8. expor health/readiness em loopback.
 
 ## Fora do core
 
-- banco de registradores;
 - mapas Modbus por fabricante/modelo;
-- polling de pontos;
-- conversão de RPM/pressão/tensão/alarme;
+- polling de registradores;
+- interpretação de RPM/tensão/alarmes;
 - historian/storage de processo;
-- banco obrigatório de dispositivos;
-- engine de alarmes/dashboard;
-- fan-out semântico de telemetria.
+- broker MQTT;
+- servidor OPC UA;
+- interpretação J1939/CANopen;
+- command plane industrial genérico;
+- fan-out raw sem arbitragem.
 
-Um protocolo desconhecido deve atravessar o túnel raw normalmente.
+## Readiness
 
-## Framing/protocolo opcional
+O runtime mantém `/readyz` falso até todos os componentes configurados inicializarem sua camada local:
 
-Framing só entra quando necessário para **transportar corretamente**, por exemplo conversão serial/encapsulamento ou arbitragem especializada. Conhecer framing nunca autoriza o core a conhecer o significado de registradores.
+- admin HTTP conseguiu bind;
+- tunnels stream construíram suas sources/listeners;
+- UDP conseguiu bind e resolver target;
+- serial criou seu socket provider;
+- CAN confirmou a interface configurada e criou seu socket provider.
 
-## Sem fan-out raw
+Readiness não é HIL. Abertura efetiva de uma porta serial por sessão, comunicação com dispositivo remoto e tráfego CAN físico continuam sendo gates de campo.
 
-Uma sessão request/response não pode ser copiada cegamente para múltiplos mestres. Um Tunnel raw possui um consumidor ativo por vez. Compartilhamento de dados ocorre depois do driver/SCADA/broker ou por plugin protocol-aware separado.
+## Concorrência e disponibilidade
 
-## Observabilidade
+- registry de sessões usa `RWMutex`;
+- contadores de atividade usam atomics;
+- métricas tiram snapshot sob lock e liberam o lock antes de qualquer escrita HTTP;
+- erros fatais de componente cancelam o contexto interno e aguardam todas as goroutines antes de `Run` retornar;
+- stream duplex aplica write deadline e drain de half-close;
+- UDP revalida `lastSeen` antes de expirar uma sessão para evitar fechamento concorrente de sessão recém-ativada.
 
-Métricas do Gateway descrevem a ponte, não o processo industrial: pares, conexões, bytes por direção, erros, reconnects e readiness.
-
-## Estrutura atual
+## Estrutura
 
 ```text
 cmd/rc-gateway
@@ -88,28 +110,30 @@ internal/config
       |
       v
 internal/gateway
-      |
-      v
-internal/bridge
-   /       \
-field    consumer
+   /    |      \
+  v     v       v
+bridge datagram providers
+  |      |      /   \
+ TCP    UDP  serial  CAN
+ TLS
+ Unix
+      \
+       admin + core/session + metrics
 ```
 
-Packages mantidos no caminho principal: `admin`, `bridge`, `config`, `core/session`, `gateway`, `metrics` e `transport/netutil`.
+Packages principais:
 
-O antigo módulo `adapters/`, event bus, parsers/detectores, ingest, spool e leitores semânticos foram removidos após a decisão bridge-first.
+- `internal/admin` — endpoints operacionais;
+- `internal/bridge` — streams TCP/TLS/Unix;
+- `internal/config` — schema e validações fail-closed;
+- `internal/core` — sessões;
+- `internal/datagram` — UDP;
+- `internal/gateway` — lifecycle/orquestração;
+- `internal/metrics` — registry Prometheus simples;
+- `internal/provider/serialbridge` — serial raw;
+- `internal/provider/canbridge` — SocketCAN/CAN-FD;
+- `internal/transport/netutil` — CIDR allowlist.
 
-## Extensões futuras corretas
+## Extensões futuras
 
-A expansão ocorre por novos **endpoint providers duplex**:
-
-- TLS/mTLS;
-- Serial RS232/422/485;
-- UDP com política explícita de sessão;
-- WebSocket/WSS;
-- Unix socket/local IPC;
-- SocketCAN/CAN-FD quando houver contrato duplex apropriado;
-- MQTT apenas quando houver contrato de mensagens request/response adequado;
-- roteamento dinâmico seguro para muitos modems.
-
-Cada novo provider precisa provar preservação de payload e comportamento de reconnect antes de integrar o runtime.
+Novos meios entram somente como providers/transports que preservem a semântica do meio. WebSocket/WSS ou outro IPC podem ser adicionados se houver contrato duplex claro. Protocol-aware plugins devem permanecer separados do core bridge-first.
