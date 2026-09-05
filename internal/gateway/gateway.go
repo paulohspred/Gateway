@@ -17,6 +17,7 @@ import (
 	"github.com/paulohspred/Gateway/internal/provider/canbridge"
 	"github.com/paulohspred/Gateway/internal/provider/serialbridge"
 	"github.com/paulohspred/Gateway/internal/provider/usbhid"
+	"github.com/paulohspred/Gateway/internal/systemdnotify"
 )
 
 const defaultMaxActivePairs = 1024
@@ -43,6 +44,12 @@ func New(cfg config.Config, logger *slog.Logger) *Gateway {
 func (g *Gateway) Run(ctx context.Context) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	notifier := systemdnotify.FromEnv()
+	defer func() {
+		if err := notifier.Stopping(); err != nil && g.logger != nil {
+			g.logger.Warn("systemd stopping notification failed", "error", err)
+		}
+	}()
 
 	maxActivePairs := g.cfg.Limits.MaxActivePairs
 	if maxActivePairs <= 0 {
@@ -189,7 +196,21 @@ func (g *Gateway) Run(ctx context.Context) error {
 
 	g.admin.SetReady(true)
 	g.metrics.Set("rc_gateway_ready", 1)
-	g.logger.Info("bridge runtime ready", "nodeId", g.cfg.NodeID, "tunnels", len(g.cfg.Tunnels), "udpTunnels", len(g.cfg.UDPTunnels), "serialProviders", len(g.cfg.SerialProviders), "usbHidProviders", len(g.cfg.USBHIDProviders), "canProviders", len(g.cfg.CANProviders), "maxActivePairs", maxActivePairs)
+	if g.logger != nil {
+		g.logger.Info("bridge runtime ready", "nodeId", g.cfg.NodeID, "tunnels", len(g.cfg.Tunnels), "udpTunnels", len(g.cfg.UDPTunnels), "serialProviders", len(g.cfg.SerialProviders), "usbHidProviders", len(g.cfg.USBHIDProviders), "canProviders", len(g.cfg.CANProviders), "maxActivePairs", maxActivePairs)
+	}
+	if err := notifier.Ready(); err != nil {
+		g.admin.SetReady(false)
+		g.metrics.Set("rc_gateway_ready", 0)
+		cancel()
+		wg.Wait()
+		return fmt.Errorf("systemd readiness notification: %w", err)
+	}
+	notifier.StartWatchdog(runCtx, func(err error) {
+		if g.logger != nil {
+			g.logger.Warn("systemd watchdog notification failed", "error", err)
+		}
+	})
 
 	select {
 	case <-ctx.Done():
