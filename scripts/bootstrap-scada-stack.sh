@@ -83,7 +83,7 @@ mkdir -p "$KIT_DIR"
 
 curl_get() {
   local url="$1" dest="$2"
-  curl --fail --show-error --silent --location \
+  curl --fail --show-error --location --progress-bar \
     --proto '=https' --proto-redir '=https' --tlsv1.2 \
     --retry 5 --retry-delay 2 --retry-all-errors \
     --connect-timeout 20 --max-time 900 \
@@ -114,6 +114,19 @@ for required in scripts/build-release.sh scripts/install-scada-stack.sh configs/
   [[ -e "$GATEWAY_SOURCE_DIR/$required" ]] || die "fonte Gateway incompleta: $required" 4
 done
 
+# Ubuntu 24.04 currently ships an older bootstrap Go. The project declares its
+# required Go release in go.mod. Resolve that exact toolchain first and prepend
+# its bin directory to PATH so helper tools such as cyclonedx-gomod also invoke
+# the project toolchain instead of falling back to /usr/bin/go.
+PROJECT_GO_VERSION="$(awk '$1 == "go" {print $2; exit}' "$GATEWAY_SOURCE_DIR/go.mod")"
+[[ "$PROJECT_GO_VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || die "versão Go inválida em go.mod: $PROJECT_GO_VERSION" 4
+PROJECT_GOTOOLCHAIN="go${PROJECT_GO_VERSION}+auto"
+log "preparando toolchain Go ${PROJECT_GO_VERSION} exigida pelo Gateway"
+PROJECT_GOROOT="$(GOTOOLCHAIN="$PROJECT_GOTOOLCHAIN" go env GOROOT)"
+[[ -x "$PROJECT_GOROOT/bin/go" ]] || die "toolchain Go ${PROJECT_GO_VERSION} não foi resolvida" 69
+PROJECT_GO_BIN="$PROJECT_GOROOT/bin"
+log "toolchain ativa: $($PROJECT_GO_BIN/go version)"
+
 log "baixando Rapid SCADA ${RAPID_VERSION} do fornecedor oficial"
 curl_get "$RAPID_URL" "$RAPID_ARCHIVE"
 RAPID_DOWNLOADED_SHA="$(sha256sum "$RAPID_ARCHIVE" | awk '{print $1}')"
@@ -133,13 +146,18 @@ log "gerando artifact Gateway local a partir do commit pinado"
 TOOL_BIN="$WORK_DIR/gobin"
 mkdir -p "$TOOL_BIN"
 # Keep the same CycloneDX tool revision used by CI so the locally built VM artifact also carries an SBOM.
-GOBIN="$TOOL_BIN" GOTOOLCHAIN=auto go install github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@07257d5b9cbd2a3d4338a880c0ca50081e1ac445
+PATH="$PROJECT_GO_BIN:$PATH" \
+  GOROOT="$PROJECT_GOROOT" \
+  GOBIN="$TOOL_BIN" \
+  GOTOOLCHAIN="$PROJECT_GOTOOLCHAIN" \
+  "$PROJECT_GO_BIN/go" install github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@07257d5b9cbd2a3d4338a880c0ca50081e1ac445
 
 (
   cd "$GATEWAY_SOURCE_DIR"
   VERSION="vm-${GATEWAY_REF:0:12}"
-  PATH="$TOOL_BIN:$PATH" \
-    GOTOOLCHAIN=auto \
+  PATH="$TOOL_BIN:$PROJECT_GO_BIN:$PATH" \
+    GOROOT="$PROJECT_GOROOT" \
+    GOTOOLCHAIN="$PROJECT_GOTOOLCHAIN" \
     COMMIT="$GATEWAY_REF" \
     ARCHES="$ARCH" \
     REQUIRE_SBOM=1 \
