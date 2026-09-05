@@ -65,6 +65,21 @@ func TestLoadRejectsDuplicateUSBHIDAutoSelector(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsWildcardUSBHIDSelectorOverlappingExactUnit(t *testing.T) {
+	path := writeUSBHIDConfig(t, `{"schema":3,"nodeId":"gw","usbHidProviders":[{"id":"usb-any","socket":"/run/rc-gateway/any.sock","vendorId":"1234","productId":"5678"},{"id":"usb-s1","socket":"/run/rc-gateway/s1.sock","vendorId":"1234","productId":"5678","serialNumber":"S1"}],"tunnels":[]}`)
+	_, err := LoadStrict(path)
+	if err == nil || !strings.Contains(err.Error(), "overlaps selector") {
+		t.Fatalf("expected wildcard selector overlap rejection, got %v", err)
+	}
+}
+
+func TestLoadAllowsDistinctUSBHIDSerialSelectors(t *testing.T) {
+	path := writeUSBHIDConfig(t, `{"schema":3,"nodeId":"gw","usbHidProviders":[{"id":"usb-s1","socket":"/run/rc-gateway/s1.sock","vendorId":"1234","productId":"5678","serialNumber":"S1"},{"id":"usb-s2","socket":"/run/rc-gateway/s2.sock","vendorId":"1234","productId":"5678","serialNumber":"S2"}],"tunnels":[]}`)
+	if _, err := LoadStrict(path); err != nil {
+		t.Fatalf("distinct serial selectors should coexist: %v", err)
+	}
+}
+
 func TestLoadRejectsUnsafeUSBHIDDevicePath(t *testing.T) {
 	path := writeUSBHIDConfig(t, `{"schema":3,"nodeId":"gw","usbHidProviders":[{"id":"usb","socket":"/run/rc-gateway/usb.sock","device":"/tmp/hidraw0"}],"tunnels":[]}`)
 	_, err := LoadStrict(path)
