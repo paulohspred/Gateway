@@ -1,0 +1,28 @@
+{
+  "schema": 3,
+  "nodeId": "rc-gateway-serial-lab",
+  "admin": {"bind": "127.0.0.1:18080"},
+  "security": {"requireAllowlist": true, "commandPlaneEnabled": false},
+  "serialProviders": [
+    {
+      "id": "rs485-bus-1",
+      "socket": "/run/rc-gateway/rs485-bus-1.sock",
+      "device": "/dev/ttyUSB0",
+      "standard": "rs485",
+      "baudRate": 9600,
+      "dataBits": 8,
+      "parity": "even",
+      "stopBits": "1",
+      "readTimeoutMilliseconds": 250,
+      "rts": false,
+      "dtr": false
+    }
+  ],
+  "tunnels": [
+    {
+      "id": "rs485-bus-1-to-rapid",
+      "field": {"mode": "connect", "network": "unix", "address": "/run/rc-gateway/rs485-bus-1.sock", "reconnectSeconds": 1},
+      "consumer": {"mode": "listen", "network": "tcp", "bind": "127.0.0.1:25100"}
+    }
+  ]
+}

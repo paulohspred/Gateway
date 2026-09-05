@@ -1,0 +1,50 @@
+{
+  "schema": 3,
+  "nodeId": "rc-gateway-01",
+  "admin": {"bind": "127.0.0.1:18080"},
+  "security": {
+    "requireAllowlist": true,
+    "commandPlaneEnabled": false
+  },
+  "tunnels": [
+    {
+      "id": "pusr-15003-to-rapid",
+      "pairTimeoutSeconds": 30,
+      "writeTimeoutSeconds": 30,
+      "drainTimeoutSeconds": 2,
+      "field": {
+        "mode": "listen",
+        "network": "tcp",
+        "bind": "0.0.0.0:15003",
+        "allowedCidrs": ["10.0.0.0/8"],
+        "keepAliveSeconds": 30
+      },
+      "consumer": {
+        "mode": "listen",
+        "network": "tcp",
+        "bind": "127.0.0.1:25003",
+        "keepAliveSeconds": 30
+      }
+    },
+    {
+      "id": "direct-device-to-rapid",
+      "pairTimeoutSeconds": 30,
+      "writeTimeoutSeconds": 30,
+      "drainTimeoutSeconds": 2,
+      "field": {
+        "mode": "connect",
+        "network": "tcp",
+        "address": "10.60.20.222:502",
+        "dialTimeoutSeconds": 10,
+        "reconnectSeconds": 5,
+        "keepAliveSeconds": 30
+      },
+      "consumer": {
+        "mode": "listen",
+        "network": "tcp",
+        "bind": "127.0.0.1:25020",
+        "keepAliveSeconds": 30
+      }
+    }
+  ]
+}

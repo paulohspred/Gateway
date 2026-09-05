@@ -1,0 +1,21 @@
+{
+  "schema": 3,
+  "nodeId": "rc-gw-can-01",
+  "admin": {"bind": "127.0.0.1:18080"},
+  "security": {
+    "requireAllowlist": true,
+    "commandPlaneEnabled": false
+  },
+  "canProviders": [
+    {
+      "id": "can-main",
+      "interface": "can0",
+      "socket": "/run/rc-gateway/can-main.sock",
+      "enableFd": true,
+      "receiveOwn": false,
+      "allowTransmit": false
+    }
+  ],
+  "tunnels": [],
+  "udpTunnels": []
+}

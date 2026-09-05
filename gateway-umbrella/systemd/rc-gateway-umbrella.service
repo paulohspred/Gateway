@@ -1,0 +1,37 @@
+[Unit]
+Description=RC Universal Gateway (bridge-first)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=rc-gateway
+Group=rc-gateway
+SupplementaryGroups=dialout
+WorkingDirectory=/opt/rc-gateway-umbrella/current
+ExecStartPre=/opt/rc-gateway-umbrella/current/bin/rc-gateway --check-config --config /etc/rc-gateway-umbrella.json
+ExecStart=/opt/rc-gateway-umbrella/current/bin/rc-gateway --config /etc/rc-gateway-umbrella.json
+Restart=always
+RestartSec=3
+RuntimeDirectory=rc-gateway
+RuntimeDirectoryMode=0750
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectHostname=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK AF_CAN
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

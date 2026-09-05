@@ -1,0 +1,43 @@
+{
+  "schema": 1,
+  "lifecycle": ["experimental", "lab_validated", "field_validated", "production"],
+  "transports": [
+    {"id":"tcp_server","implementation":"native","status":"experimental"},
+    {"id":"tcp_client","implementation":"native","status":"experimental"},
+    {"id":"udp_server","implementation":"native","status":"experimental"},
+    {"id":"tls_server","implementation":"native","status":"experimental"},
+    {"id":"tls_client","implementation":"native","status":"experimental"},
+    {"id":"http_ingest","implementation":"native","status":"experimental"},
+    {"id":"serial_rs232","implementation":"sidecar-or-native-next","status":"planned"},
+    {"id":"serial_rs422","implementation":"sidecar-or-native-next","status":"planned"},
+    {"id":"serial_rs485","implementation":"sidecar-or-native-next","status":"planned"},
+    {"id":"mqtt_mqtts","implementation":"sidecar","status":"planned"},
+    {"id":"websocket","implementation":"sidecar-or-native-next","status":"planned"},
+    {"id":"socketcan","implementation":"sidecar-or-native-next","status":"planned"}
+  ],
+  "protocols": [
+    {"id":"raw","implementation":"native","status":"experimental"},
+    {"id":"modbus_tcp","implementation":"native-framing","status":"experimental"},
+    {"id":"modbus_rtu","implementation":"native-framing","status":"experimental"},
+    {"id":"modbus_ascii","implementation":"adapter","status":"planned"},
+    {"id":"nmea0183","implementation":"native-detect","status":"experimental"},
+    {"id":"json","implementation":"native-detect","status":"experimental"},
+    {"id":"mqtt","implementation":"sidecar","status":"planned"},
+    {"id":"opcua","implementation":"sidecar","status":"planned"},
+    {"id":"bacnet_ip","implementation":"sidecar","status":"planned"},
+    {"id":"dnp3","implementation":"sidecar","status":"planned"},
+    {"id":"iec60870_5_101","implementation":"sidecar","status":"planned"},
+    {"id":"iec60870_5_104","implementation":"sidecar","status":"planned"},
+    {"id":"can","implementation":"sidecar","status":"planned"},
+    {"id":"can_fd","implementation":"sidecar","status":"planned"},
+    {"id":"j1939","implementation":"sidecar","status":"planned"},
+    {"id":"canopen","implementation":"sidecar","status":"planned"},
+    {"id":"snmp","implementation":"sidecar","status":"planned"},
+    {"id":"coap","implementation":"sidecar","status":"planned"},
+    {"id":"lwm2m","implementation":"sidecar","status":"planned"},
+    {"id":"mbus","implementation":"sidecar","status":"planned"},
+    {"id":"wireless_mbus","implementation":"sidecar","status":"planned"},
+    {"id":"lorawan","implementation":"mqtt-sidecar","status":"planned"},
+    {"id":"vendor_specific","implementation":"sidecar","status":"planned"}
+  ]
+}
