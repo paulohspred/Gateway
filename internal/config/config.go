@@ -96,15 +96,15 @@ type UDPTunnel struct {
 }
 
 type Config struct {
-	Schema           int              `json:"schema"`
-	NodeID           string           `json:"nodeId"`
-	Admin            Admin            `json:"admin"`
-	Security         Security         `json:"security"`
-	SerialProviders  []SerialProvider `json:"serialProviders,omitempty"`
-	USBHIDProviders  []USBHIDProvider `json:"usbHidProviders,omitempty"`
-	CANProviders     []CANProvider    `json:"canProviders,omitempty"`
-	Tunnels          []Tunnel         `json:"tunnels"`
-	UDPTunnels       []UDPTunnel      `json:"udpTunnels,omitempty"`
+	Schema          int              `json:"schema"`
+	NodeID          string           `json:"nodeId"`
+	Admin           Admin            `json:"admin"`
+	Security        Security         `json:"security"`
+	SerialProviders []SerialProvider `json:"serialProviders,omitempty"`
+	USBHIDProviders []USBHIDProvider `json:"usbHidProviders,omitempty"`
+	CANProviders    []CANProvider    `json:"canProviders,omitempty"`
+	Tunnels         []Tunnel         `json:"tunnels"`
+	UDPTunnels      []UDPTunnel      `json:"udpTunnels,omitempty"`
 }
 
 func Load(path string) (Config, error) {
