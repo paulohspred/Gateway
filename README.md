@@ -1,10 +1,8 @@
-# RC Universal Gateway — Gateway Umbrella
+# RC Universal Gateway
 
-> **Antes de alterar este projeto:** leia [`docs/PROJECT_STATE.md`](./docs/PROJECT_STATE.md). O handoff é obrigatório e deve ser atualizado em toda mudança.
+> Antes de alterar o runtime, leia [`docs/PROJECT_STATE.md`](./docs/PROJECT_STATE.md) e mantenha o handoff atualizado no mesmo conjunto de mudanças.
 
-`gateway-umbrella/` é um **gateway universal de conectividade industrial/IoT**. Seu core é uma ponte byte-transparent entre o campo e o software que realmente entende o equipamento.
-
-## Regra central
+RC Universal Gateway é um **gateway industrial/IoT bridge-first**. O core transporta bytes, datagramas e frames entre o campo e o software que entende o equipamento, sem introduzir banco de registradores, polling semântico ou historian.
 
 ```text
 BRIDGE FIRST
@@ -13,9 +11,7 @@ NO DEVICE MEMORY DATABASE
 NO TELEMETRY HISTORIAN
 ```
 
-O core não contém mapas de memória de ComAp, DSE, PLC, IHM ou qualquer fabricante. Não faz polling de registradores, não converte RPM/tensão/alarmes e não mantém histórico de telemetria.
-
-## Fluxo principal
+## Fluxo
 
 ```text
 Controladora / PLC / RTU / IED
@@ -28,76 +24,104 @@ RC UNIVERSAL GATEWAY
    |
 ponte raw
    |
-Rapid SCADA / FUXA / software do fabricante / outro destino
+Rapid SCADA / FUXA / software do fabricante / outro consumidor
 ```
 
-O destino envia as requisições. O Gateway encaminha bytes/datagramas/frames até o equipamento e devolve a resposta sem interpretar registradores ou alterar o payload.
+O consumidor envia as requisições. O Gateway encaminha o payload sem interpretar registradores ou alterar silenciosamente o conteúdo.
 
-## Runtime
-
-Schema `3`.
+## Transportes implementados
 
 ### Stream
 
 - TCP `listen`/`connect`;
-- TLS 1.3/mTLS;
+- TLS 1.3 e mTLS;
 - Unix sockets;
 - RS232/RS422/RS485 via provider serial raw.
 
-Cada túnel tem `field` e `consumer`. Quando um lado é `listen` e o outro `connect`, o inbound é o trigger: o Gateway só disca o outro extremo quando existe peer.
+Cada túnel possui `field` e `consumer`. Em `listen ↔ connect`, o peer inbound dispara a conexão para a outra ponta.
 
 ### Datagram
 
-UDP preserva o limite de cada datagrama e mantém sessão isolada por peer, com idle timeout e limites explícitos.
+UDP preserva a fronteira de cada datagrama, mantém sessão isolada por peer, aplica idle timeout, allowlist e limites explícitos de sessões/tamanho.
 
 ### Frame
 
-SocketCAN/CAN-FD preserva frames do ABI Linux. J1939/CANopen continuam sendo responsabilidade do consumidor. Transmissão CAN é bloqueada por padrão.
+SocketCAN/CAN-FD preserva frames do ABI Linux. J1939/CANopen permanecem responsabilidade do consumidor. Transmissão CAN é **bloqueada por padrão** (`allowTransmit=false`).
 
-## Exemplos
-
-### PUSR reverso + Rapid
-
-```text
-PUSR ----TCP----> :15003  Gateway  :25003 <----TCP---- Rapid
-```
-
-### Equipamento direto por IP/VPN
-
-```text
-10.60.20.222:502 <---- Gateway :25020 <---- Rapid
-```
-
-O Gateway não precisa saber se o endpoint é DSE, ComAp, Siemens, Schneider ou protocolo proprietário.
-
-## Sem fan-out raw cego
-
-Um túnel request/response tem **um consumidor ativo por vez**. Replicar bytes simultaneamente para vários mestres pode misturar transações. Fan-out de telemetria pertence ao SCADA/driver/broker ou a um componente protocol-aware com arbitragem explícita.
-
-## Segurança
+## Segurança por padrão
 
 - `commandPlaneEnabled=true` é rejeitado;
-- CAN TX fica `allowTransmit=false` por padrão;
-- listeners públicos suportam allowlist CIDR;
-- TLS/mTLS é transporte seguro, não autorização automática para comando industrial;
-- admin deve permanecer em rede local/management;
-- firewall/VPN continuam parte do plano de rede.
+- administração HTTP é restrita a loopback nesta release;
+- listeners TCP/UDP não-loopback exigem `allowedCidrs` mesmo quando configurações legadas tentam desabilitar a política;
+- opções TLS são rejeitadas se `tls.enabled=false`;
+- TLS listener exige chave/certificado e mTLS exige CA;
+- CAN TX permanece desabilitado por padrão;
+- caminhos de sockets Unix são normalizados e arquivos comuns nunca são removidos como se fossem sockets stale;
+- firewall/VPN continuam fazendo parte do plano de rede OT.
+
+Admin padrão: `127.0.0.1:18080`.
+
+## Estrutura do repositório
+
+```text
+.
+├── cmd/rc-gateway/             # entrypoint
+├── internal/
+│   ├── admin/                  # health/readiness/status/metrics
+│   ├── bridge/                 # stream duplex/TLS/Unix
+│   ├── config/                 # schema e validação fail-closed
+│   ├── core/                   # sessões
+│   ├── datagram/               # UDP por peer
+│   ├── gateway/                # orquestração do runtime
+│   ├── metrics/                # métricas operacionais
+│   ├── provider/               # serial e SocketCAN
+│   └── transport/netutil/      # allowlists de rede
+├── configs/                    # exemplos validados pelo CI
+├── docs/                       # arquitetura, runbook e matrizes
+├── scripts/                    # CI local, release, install e rollback
+├── systemd/                    # unit endurecida
+├── .github/workflows/ci.yml    # gates automatizados
+├── go.mod
+└── README.md
+```
+
+O código fica diretamente na raiz porque este repositório é o produto standalone; não existe mais uma pasta intermediária `gateway-umbrella/`.
 
 ## Desenvolvimento
 
 ```bash
-cd gateway-umbrella
-go test ./...
+go test ./... -shuffle=on -count=1
+go test -race ./... -count=1
 go vet ./...
-go build ./cmd/rc-gateway
+go build -trimpath ./cmd/rc-gateway
 ./rc-gateway --check-config --config ./configs/gateway.example.json
 ```
 
-Admin padrão: `127.0.0.1:18080`.
+Ou execute o gate local completo:
+
+```bash
+bash scripts/ci.sh
+```
+
+## CI e gates
+
+O GitHub Actions executa, em sequência:
+
+1. sincronismo do `PROJECT_STATE.md`;
+2. `gofmt`, `go vet`, testes e cobertura;
+3. race detector;
+4. build e validação de todos os exemplos;
+5. 1.000 pares duplex simultâneos + 1.000 ciclos de churn TCP;
+6. impairment + mini-soak;
+7. `govulncheck`;
+8. build Linux `amd64`/`arm64` reproduzível;
+9. SBOM CycloneDX;
+10. SHA256, dry-run do instalador e artifact de release;
+11. provenance attestation nas builds promovidas em `main`.
+
+`/readyz` só fica verde depois que todos os componentes configurados inicializam sua camada local de runtime. Isso não substitui HIL físico: serial/CAN/dispositivo remoto ainda precisam de homologação real.
 
 ## Release standalone
-
-A instalação de produção é independente do sistema RC Geradores:
 
 ```text
 /opt/rc-gateway-umbrella/
@@ -113,7 +137,7 @@ REQUIRE_SBOM=1 ARCHES="amd64 arm64" \
   bash scripts/build-release.sh <versão>
 ```
 
-Pré-validar sem modificar o host:
+Pré-validar:
 
 ```bash
 bash scripts/install-release.sh --dry-run \
@@ -137,14 +161,13 @@ Rollback:
 sudo /opt/rc-gateway-umbrella/current/scripts/rollback-release.sh
 ```
 
-O instalador valida SHA256, estrutura do pacote, `--check-config`, faz troca atômica, exige readiness e restaura release/configuração anteriores automaticamente se a atualização falhar.
+O instalador valida integridade, estrutura e configuração antes da troca atômica; readiness é obrigatória após restart e falha de atualização aciona rollback automático.
 
-## Documentos
+## Documentação
 
-- [`docs/PROJECT_STATE.md`](./docs/PROJECT_STATE.md) — handoff canônico;
+- [`docs/PROJECT_STATE.md`](./docs/PROJECT_STATE.md) — estado/handoff canônico;
 - [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) — arquitetura;
 - [`docs/PRODUCTION_MATRIX.md`](./docs/PRODUCTION_MATRIX.md) — gates de produção;
-- [`docs/COMPATIBILITY_MATRIX.md`](./docs/COMPATIBILITY_MATRIX.md) — meios/protocolos transportáveis e limites;
+- [`docs/COMPATIBILITY_MATRIX.md`](./docs/COMPATIBILITY_MATRIX.md) — transportes/protocolos e limites;
 - [`docs/RUNBOOK.md`](./docs/RUNBOOK.md) — instalação, operação, diagnóstico, rollback e HIL;
-- [`docs/THINGSBOARD_REFERENCE.md`](./docs/THINGSBOARD_REFERENCE.md) — referência comparativa;
-- [`docs/PLUGIN_CONTRACT.md`](./docs/PLUGIN_CONTRACT.md) — contrato de endpoint providers.
+- [`docs/PLUGIN_CONTRACT.md`](./docs/PLUGIN_CONTRACT.md) — contrato de providers.
