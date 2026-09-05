@@ -26,8 +26,8 @@ for arch in $ARCHES; do
   CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath -buildvcs=false -ldflags "$ldflags" -o "$stage/bin/rc-gateway" ./cmd/rc-gateway
   cp systemd/rc-gateway.service "$stage/systemd/"
   cp configs/*.json "$stage/configs/"
-  cp scripts/install-release.sh scripts/rollback-release.sh scripts/probe-usb-hid.sh scripts/collect-diagnostics.sh scripts/vm-acceptance.sh scripts/run-soak.sh scripts/rapid-scada-acceptance.sh "$stage/scripts/"
-  cp docs/RUNBOOK.md docs/USB_HID_COMAP.md docs/COMPATIBILITY_MATRIX.md docs/PRODUCTION_MATRIX.md docs/VM_ACCEPTANCE.md docs/THREAT_MODEL.md docs/PROFESSIONALIZATION_PLAN.md docs/CONFIGURATION_COMPATIBILITY.md docs/RAPID_SCADA_INTEGRATION.md "$stage/docs/"
+  cp scripts/install-release.sh scripts/rollback-release.sh scripts/probe-usb-hid.sh scripts/collect-diagnostics.sh scripts/vm-acceptance.sh scripts/run-soak.sh scripts/rapid-scada-acceptance.sh scripts/rapid-scada-production-acceptance.sh "$stage/scripts/"
+  cp docs/RUNBOOK.md docs/USB_HID_COMAP.md docs/COMPATIBILITY_MATRIX.md docs/PRODUCTION_MATRIX.md docs/VM_ACCEPTANCE.md docs/THREAT_MODEL.md docs/PROFESSIONALIZATION_PLAN.md docs/CONFIGURATION_COMPATIBILITY.md docs/RAPID_SCADA_INTEGRATION.md docs/GENERATOR_SCADA_PRODUCTION_READINESS.md "$stage/docs/"
   cp README.md SECURITY.md SUPPORT.md CHANGELOG.md LICENSE NOTICE THIRD_PARTY_NOTICES.md "$stage/"
   chmod 0755 "$stage/bin/rc-gateway" "$stage/scripts/"*.sh
   printf '%s\n' "$VERSION" > "$stage/VERSION"

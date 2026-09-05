@@ -97,26 +97,27 @@ The exact candidate commit must pass:
 5. `go vet`;
 6. Staticcheck;
 7. shuffled unit/integration tests with coverage;
-8. minimum total coverage threshold;
-9. race detector;
-10. build and validation of every `configs/*.json` example;
-11. real-socket parallel/concurrency tests plus 1,000-pair stress;
-12. 1,000 TCP churn cycles and leak gate;
-13. impairment and mini-soak gate;
-14. `govulncheck`;
-15. CodeQL Go analysis;
-16. shell syntax and malicious installer-archive tests;
-17. deterministic/reproducible Linux amd64 and arm64 release builds;
-18. SHA256 checksums and CycloneDX SBOM;
-19. installer dry-run against the real release archive;
-20. artifact content checks, including proprietary and third-party notices;
-21. provenance attestation workflow for versioned releases.
+8. explicit Rapid SCADA Modbus transport contract tests;
+9. minimum total coverage threshold;
+10. race detector;
+11. build and validation of every `configs/*.json` example;
+12. real-socket parallel/concurrency tests plus 1,000-pair stress;
+13. 1,000 TCP churn cycles and leak gate;
+14. impairment and mini-soak gate;
+15. `govulncheck`;
+16. CodeQL Go analysis;
+17. shell syntax and malicious installer-archive tests;
+18. deterministic/reproducible Linux amd64 and arm64 release builds;
+19. SHA256 checksums and CycloneDX SBOM;
+20. installer dry-run against the real release archive;
+21. artifact content checks, including proprietary/third-party notices and Rapid SCADA production-readiness tooling;
+22. provenance attestation workflow for versioned releases.
 
 Third-party GitHub Actions are pinned to immutable commit SHAs. Dependabot is configured to propose Go-module and GitHub Actions updates; updates still require the full validation chain.
 
 ## Rapid SCADA v6 integration contract
 
-Rapid SCADA is an external consumer, not part of the Gateway core and not bundled into the proprietary Gateway artifact. Compatibility was reviewed against `RapidScada/scada-v6` `master` commit `1fd36080c7830303f921672fdaee335a06e7ae50`.
+Rapid SCADA is an external consumer, not part of the Gateway core and not bundled into the proprietary Gateway artifact. Compatibility was reviewed against Rapid SCADA **v6.4.7**, `RapidScada/scada-v6` `master` commit `1fd36080c7830303f921672fdaee335a06e7ae50`.
 
 The supported native integration uses Rapid SCADA `DrvCnlBasic` as `TcpClient` and lets the Rapid SCADA application driver interpret the payload. For Modbus, `DrvModbus` supports `TransMode=RTU`, `ASCII` and `TCP`.
 
@@ -131,12 +132,21 @@ For one Gateway tunnel, especially a single RS485 multidrop bus, `ConnectionMode
 Repository integration assets:
 
 - `docs/RAPID_SCADA_INTEGRATION.md`;
+- `docs/GENERATOR_SCADA_PRODUCTION_READINESS.md`;
 - `configs/rapid-scada.modbus-tcp.example.json`;
 - `configs/rapid-scada.rtu-over-tcp.example.json`;
 - `configs/rapid-scada.rs485-multidrop.example.json`;
-- `scripts/rapid-scada-acceptance.sh`.
+- `internal/bridge/rapid_scada_test.go`;
+- `scripts/rapid-scada-acceptance.sh`;
+- `scripts/rapid-scada-production-acceptance.sh`.
 
-The previous fully green automated software checkpoint is `9f13cd5a69db31b3a4e01999844834e99fa65336`. Any commit adding or changing the Rapid SCADA integration assets must pass the complete CI/CodeQL chain again before it inherits `software_field_test_ready` status. Actual Rapid SCADA interoperability remains a VM acceptance gate until `scadacomm6.service` is run against the exact Gateway artifact.
+The dedicated software contract covers Modbus TCP read/write/exception frames, Modbus RTU CRC preservation, five Unit IDs on one shared stream, TCP fragmentation/coalescing and 1,000 sustained polling cycles. These tests prove byte-stream behavior; they do not claim a semantic Modbus implementation inside the Gateway.
+
+The upstream Rapid SCADA `scadacomm6.service` baseline has `Type=notify`/`Restart=always` and no explicit `User=`. Non-root hardening must be tested with the real installation before it can become a production invariant; the production preflight can require this using `RAPID_SCADA_REQUIRE_NON_ROOT=1`.
+
+The last fully green automated software checkpoint before this increment is `0bd0c129ba2bd01b0dde5f4f57d0d6d47b7c1647` (Gateway CI `33985829136`, CodeQL `33985829030`). The new Rapid SCADA production-readiness increment must pass the complete CI/CodeQL chain on its exact HEAD before it inherits `software_field_test_ready` status.
+
+Actual Rapid SCADA interoperability remains a VM acceptance gate until `scadacomm6.service` is run against the exact Gateway artifact. Physical generator/control-device behavior remains HIL-specific.
 
 ## Configuration compatibility
 
@@ -153,7 +163,7 @@ rc-gateway_<version>_linux_amd64.tar.gz
 rc-gateway_<version>_linux_arm64.tar.gz
 ```
 
-A release includes the binary, validated examples, systemd unit, install/rollback/diagnostic/VM scripts, Rapid SCADA acceptance tooling, operational documentation, `LICENSE`, `NOTICE`, `THIRD_PARTY_NOTICES.md`, `MANIFEST`, `VERSION` and SBOM. The manifest identifies `product=rc-gateway` and `license=Proprietary-All-Rights-Reserved`.
+A release includes the binary, validated examples, systemd unit, install/rollback/diagnostic/VM scripts, Rapid SCADA acceptance/preflight tooling, generator-SCADA readiness documentation, operational documentation, `LICENSE`, `NOTICE`, `THIRD_PARTY_NOTICES.md`, `MANIFEST`, `VERSION` and SBOM. The manifest identifies `product=rc-gateway` and `license=Proprietary-All-Rights-Reserved`.
 
 Version-tag builds can be provenance-attested through GitHub OIDC. SHA256 is an integrity checksum; provenance/attestation is the publisher/build-chain evidence.
 
@@ -183,11 +193,13 @@ Because the repository is public, third parties can technically read/clone the s
 
 Install the exact CI/release artifact on a clean Ubuntu Server 24.04 amd64 VM and execute `VM_ACCEPTANCE.md` / `scripts/vm-acceptance.sh`, including reboot persistence, watchdog, failure recovery, upgrade, rollback, negative config tests, resource observation and a 24-hour soak. A 7-day soak is the target before broad production rollout.
 
-When Rapid SCADA is part of the deployment, install/configure the real Rapid SCADA v6 and execute `scripts/rapid-scada-acceptance.sh`. The acceptance must prove at least one real Rapid SCADA Communicator session through the Gateway; repository-only review does not substitute this test.
+When Rapid SCADA is part of the deployment, install/configure the real Rapid SCADA v6.4.7 and execute both `scripts/rapid-scada-acceptance.sh` and `scripts/rapid-scada-production-acceptance.sh`. The production preflight requires explicit consumer ports, checks loopback exposure, time synchronization, disk headroom, restart counters and real session recovery. Disruptive restart testing is opt-in and must run only in an authorized VM/window.
 
 ### Hardware-in-the-loop
 
 Production claims remain matrix-specific and require real equipment for the claimed path: PUSR/USR/Teltonika or equivalent modem, MikroTik/VPN/4G, RS232/422/485 including multidrop/half-duplex, USB HID/ComAp InteliLite 4 AMF 9, UDP where used, CAN/CAN-FD, power-cycle/reconnect and consumer/Gateway restarts.
+
+For generator projects, the initial commissioning gate is read-oriented. Start/stop, transfer, reset and setpoint writes must be enabled only after model/firmware-specific HIL, interlock review, authorization and audit behavior are proven in the SCADA layer.
 
 For ComAp USB, HIL must confirm actual Linux enumeration, VID/PID/serial, HID report descriptor/report sizes and the application protocol. Do not claim automatic ComAp Direct↔Modbus conversion.
 

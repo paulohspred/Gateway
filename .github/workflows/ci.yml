@@ -57,6 +57,8 @@ jobs:
           "$RUNNER_TEMP/gobin/staticcheck" ./...
       - name: Unit and integration tests
         run: go test ./... -shuffle=on -count=1 -coverprofile=coverage.out
+      - name: Rapid SCADA Modbus transport contract
+        run: go test ./internal/bridge -run '^TestRapidSCADA' -count=1 -timeout=2m
       - name: Coverage threshold
         env:
           RC_GATEWAY_MIN_COVERAGE: '58.0'
@@ -169,10 +171,12 @@ jobs:
           tar -tzf "$archive" | grep -q '/scripts/collect-diagnostics.sh$'
           tar -tzf "$archive" | grep -q '/scripts/vm-acceptance.sh$'
           tar -tzf "$archive" | grep -q '/scripts/rapid-scada-acceptance.sh$'
+          tar -tzf "$archive" | grep -q '/scripts/rapid-scada-production-acceptance.sh$'
           tar -tzf "$archive" | grep -q '/docs/USB_HID_COMAP.md$'
           tar -tzf "$archive" | grep -q '/docs/RUNBOOK.md$'
           tar -tzf "$archive" | grep -q '/docs/COMPATIBILITY_MATRIX.md$'
           tar -tzf "$archive" | grep -q '/docs/RAPID_SCADA_INTEGRATION.md$'
+          tar -tzf "$archive" | grep -q '/docs/GENERATOR_SCADA_PRODUCTION_READINESS.md$'
           tar -tzf "$archive" | grep -q '/docs/VM_ACCEPTANCE.md$'
           tar -tzf "$archive" | grep -q '/docs/THREAT_MODEL.md$'
           tar -tzf "$archive" | grep -q '/docs/CONFIGURATION_COMPATIBILITY.md$'
