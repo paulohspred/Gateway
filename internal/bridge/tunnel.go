@@ -92,40 +92,48 @@ func (t *Tunnel) Run(ctx context.Context) error {
 	if t.MaxConcurrentPairs <= 0 {
 		t.MaxConcurrentPairs = 1
 	}
-	field, err := newSource(ctx, t.Field)
+
+	runCtx, cancelRun := context.WithCancel(ctx)
+	field, err := newSource(runCtx, t.Field)
 	if err != nil {
+		cancelRun()
 		return fmt.Errorf("tunnel %s field: %w", t.ID, err)
 	}
 	defer field.Close()
-	consumer, err := newSource(ctx, t.Consumer)
+	consumer, err := newSource(runCtx, t.Consumer)
 	if err != nil {
+		cancelRun()
 		return fmt.Errorf("tunnel %s consumer: %w", t.ID, err)
 	}
 	defer consumer.Close()
+
+	localSlots := make(chan struct{}, t.MaxConcurrentPairs)
+	var pairWG sync.WaitGroup
+	defer func() {
+		cancelRun()
+		pairWG.Wait()
+	}()
+
 	if t.Hooks.OnReady != nil {
 		t.Hooks.OnReady(t.ID)
 	}
 
-	localSlots := make(chan struct{}, t.MaxConcurrentPairs)
-	var pairWG sync.WaitGroup
-	defer pairWG.Wait()
-
 	for {
-		if err := acquireLocalSlot(ctx, localSlots); err != nil {
+		if err := acquireLocalSlot(runCtx, localSlots); err != nil {
 			return nil
 		}
-		if err := t.GlobalPairLimiter.Acquire(ctx); err != nil {
+		if err := t.GlobalPairLimiter.Acquire(runCtx); err != nil {
 			releaseLocalSlot(localSlots)
 			return nil
 		}
 
-		pairCtx, cancel := context.WithTimeout(ctx, t.PairTimeout)
+		pairCtx, cancel := context.WithTimeout(runCtx, t.PairTimeout)
 		fieldConn, consumerConn, err := acquirePair(pairCtx, field, consumer, t.Field.Mode, t.Consumer.Mode)
 		cancel()
 		if err != nil {
 			releaseLocalSlot(localSlots)
 			t.GlobalPairLimiter.Release()
-			if ctx.Err() != nil {
+			if runCtx.Err() != nil {
 				return nil
 			}
 			if errors.Is(err, context.DeadlineExceeded) {
@@ -145,7 +153,7 @@ func (t *Tunnel) Run(ctx context.Context) error {
 			defer pairWG.Done()
 			defer releaseLocalSlot(localSlots)
 			defer t.GlobalPairLimiter.Release()
-			t.runPair(ctx, fieldConn, consumerConn)
+			t.runPair(runCtx, fieldConn, consumerConn)
 		}()
 	}
 }
