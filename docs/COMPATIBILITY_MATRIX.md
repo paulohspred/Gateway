@@ -8,14 +8,17 @@
 | TCP connect | field-test-ready quando CI final verde | raw stream | dispositivo IP/VPN real |
 | TLS 1.3 | field-test-ready quando CI final verde | raw stream criptografado | certificados/topologia real |
 | mTLS | field-test-ready quando CI final verde | raw stream + autenticação TLS | PKI/certificados reais |
-| Unix socket | field-test-ready quando CI final verde | raw stream local | integração local alvo |
+| Unix stream | field-test-ready quando CI final verde | raw stream local | integração local alvo |
+| Unix `SOCK_SEQPACKET` | implementado/testado | preserva uma mensagem por pacote | integração local alvo |
+| `unixpacket` ↔ stream com `length32be` | implementado/testado | comprimento uint32 BE + payload original | cliente/adapter compatível |
 | RS232 | field-test-ready quando CI final verde | bytes raw | porta/adaptador real |
 | RS422 | field-test-ready quando CI final verde | bytes raw | porta/adaptador real |
 | RS485 | field-test-ready quando CI final verde | bytes raw | half-duplex/direção do hardware |
-| USB HID `/dev/hidrawN` | transport implemented; CI cobre framing/segurança | preserva reports em `unixpacket`; write opt-in | dispositivo HID real + VID/PID/reports + adapter de aplicação quando necessário |
+| USB HID por `/dev/hidrawN` | transport implemented; CI cobre framing/segurança | preserva reports em `unixpacket`; write opt-in | dispositivo HID real + protocolo de aplicação |
+| USB HID por VID/PID/serial | transport implemented; autodiscovery fail-closed | resolve/valida hidraw e preserva reports | VID/PID/serial reais + HIL |
 | UDP | field-test-ready quando CI final verde | preserva datagramas e sessão por peer | dispositivo UDP real |
-| SocketCAN clássico | field-test-ready em software | preserva ABI/frame | interface/transceiver físico |
-| CAN-FD | field-test-ready em software | preserva ABI/frame FD | interface/transceiver FD físico |
+| SocketCAN clássico | field-test-ready em software | preserva ABI/frame em `unixpacket` | interface/transceiver físico |
+| CAN-FD | field-test-ready em software | preserva ABI/frame FD em `unixpacket` | interface/transceiver FD físico |
 
 ## Protocolos que atravessam sem driver semântico
 
@@ -34,12 +37,42 @@ Quando o protocolo já é transportado pelo meio acima, o Gateway pode atuar com
 | protocolo TCP proprietário | TCP/TLS | byte-transparent |
 | IEC-101 / DNP3 serial / NMEA | Serial | byte-transparent |
 | J1939 / CANopen | SocketCAN/CAN-FD | Gateway preserva frames; consumidor interpreta PGN/PDO |
-| USB HID genérico | `/dev/hidrawN` | Gateway preserva reports; consumidor interpreta protocolo HID/aplicação |
+| USB HID genérico | hidraw → `unixpacket` | Gateway preserva reports; consumidor interpreta protocolo HID/aplicação |
 | ComAp Direct por USB | USB HID quando a controladora enumerar como hidraw | transporte implementado; adapter semântico não é prometido até HIL/documentação suficiente |
+
+## Regras importantes para USB HID
+
+O nome `/dev/hidraw0`, `/dev/hidraw1` etc. pode mudar. Em produção, quando os metadados estiverem disponíveis, prefira selecionar a unidade por:
+
+```text
+vendorId + productId + serialNumber
+```
+
+Sem `serialNumber`, VID/PID só é aceito em runtime quando existe exatamente um match. Se `device` e seletor forem configurados simultaneamente, o Gateway confirma que ambos apontam para o mesmo hardware.
+
+O provider só sinaliza readiness depois de resolver o equipamento, confirmar que o nó existe e que é character device e publicar o socket local.
+
+## Framing de reports/frames sobre TCP
+
+Não se deve assumir que um report HID ou frame CAN pode ser despejado em TCP sem perder sua fronteira. O Gateway rejeita uma configuração `unixpacket`↔stream sem framing explícito.
+
+Com:
+
+```json
+"packetFraming": "length32be"
+```
+
+cada mensagem vira no stream:
+
+```text
+4 bytes de comprimento uint32 big-endian + payload original
+```
+
+Isso é um envelope do Gateway. Rapid SCADA, FUXA e drivers Modbus comuns **não entendem esse envelope automaticamente**; ele exige um cliente/adapter que conheça o contrato.
 
 ## InteliLite 4 AMF 9 por USB
 
-O caminho USB está preparado no runtime para dispositivos Linux `hidraw`. Para a InteliLite 4 AMF 9, a combinação precisa ser confirmada em bancada porque o fato de existir um conector USB A↔B não garante por si só qual driver/interface o Linux expõe nem que Modbus esteja disponível diretamente nessa USB.
+O caminho USB está preparado no runtime para dispositivos Linux `hidraw`, inclusive com autodiscovery/validação de identidade. Para a InteliLite 4 AMF 9, a combinação precisa ser confirmada em bancada porque o conector USB A↔B não garante por si só qual interface/driver será exposto, quais reports serão usados ou que Modbus esteja disponível diretamente na USB.
 
 O status correto antes do HIL é: **USB HID transport implemented / ComAp application adapter pending HIL**.
 
