@@ -19,6 +19,10 @@ type Security struct {
 	CommandPlaneEnabled bool `json:"commandPlaneEnabled"`
 }
 
+type Limits struct {
+	MaxActivePairs int `json:"maxActivePairs,omitempty"`
+}
+
 type TLS struct {
 	Enabled           bool   `json:"enabled,omitempty"`
 	CAFile            string `json:"caFile,omitempty"`
@@ -41,13 +45,14 @@ type Endpoint struct {
 }
 
 type Tunnel struct {
-	ID            string   `json:"id"`
-	Field         Endpoint `json:"field"`
-	Consumer      Endpoint `json:"consumer"`
-	PacketFraming string   `json:"packetFraming,omitempty"`
-	PairTimeoutS  int      `json:"pairTimeoutSeconds,omitempty"`
-	WriteTimeoutS int      `json:"writeTimeoutSeconds,omitempty"`
-	DrainTimeoutS int      `json:"drainTimeoutSeconds,omitempty"`
+	ID                 string   `json:"id"`
+	Field              Endpoint `json:"field"`
+	Consumer           Endpoint `json:"consumer"`
+	PacketFraming      string   `json:"packetFraming,omitempty"`
+	PairTimeoutS       int      `json:"pairTimeoutSeconds,omitempty"`
+	WriteTimeoutS      int      `json:"writeTimeoutSeconds,omitempty"`
+	DrainTimeoutS      int      `json:"drainTimeoutSeconds,omitempty"`
+	MaxConcurrentPairs int      `json:"maxConcurrentPairs,omitempty"`
 }
 
 type SerialProvider struct {
@@ -105,6 +110,7 @@ type Config struct {
 	NodeID          string           `json:"nodeId"`
 	Admin           Admin            `json:"admin"`
 	Security        Security         `json:"security"`
+	Limits          Limits           `json:"limits,omitempty"`
 	SerialProviders []SerialProvider `json:"serialProviders,omitempty"`
 	USBHIDProviders []USBHIDProvider `json:"usbHidProviders,omitempty"`
 	CANProviders    []CANProvider    `json:"canProviders,omitempty"`
@@ -146,6 +152,12 @@ func loadRaw(raw []byte) (Config, error) {
 	if cfg.Security.CommandPlaneEnabled {
 		return cfg, fmt.Errorf("commandPlaneEnabled is intentionally unsupported in this release")
 	}
+	if cfg.Limits.MaxActivePairs <= 0 {
+		cfg.Limits.MaxActivePairs = 1024
+	}
+	if cfg.Limits.MaxActivePairs > 10000 {
+		return cfg, fmt.Errorf("limits.maxActivePairs exceeds safe limit 10000")
+	}
 	if err := validateProviders(&cfg); err != nil {
 		return cfg, err
 	}
@@ -170,14 +182,26 @@ func loadRaw(raw []byte) (Config, error) {
 		if t.DrainTimeoutS <= 0 {
 			t.DrainTimeoutS = 2
 		}
+		if t.MaxConcurrentPairs <= 0 {
+			t.MaxConcurrentPairs = 1
+		}
 		if t.PairTimeoutS > 3600 || t.WriteTimeoutS > 3600 || t.DrainTimeoutS > 300 {
 			return cfg, fmt.Errorf("tunnel %s timeout exceeds safe configuration limit", t.ID)
+		}
+		if t.MaxConcurrentPairs > 1024 {
+			return cfg, fmt.Errorf("tunnel %s maxConcurrentPairs exceeds safe limit 1024", t.ID)
+		}
+		if t.MaxConcurrentPairs > cfg.Limits.MaxActivePairs {
+			return cfg, fmt.Errorf("tunnel %s maxConcurrentPairs exceeds limits.maxActivePairs", t.ID)
 		}
 		if err := validateEndpoint(&t.Field, "tunnel "+t.ID+" field", cfg.Security.RequireAllowlist); err != nil {
 			return cfg, err
 		}
 		if err := validateEndpoint(&t.Consumer, "tunnel "+t.ID+" consumer", cfg.Security.RequireAllowlist); err != nil {
 			return cfg, err
+		}
+		if t.MaxConcurrentPairs > 1 && !hasTriggeredPairing(t.Field.Mode, t.Consumer.Mode) {
+			return cfg, fmt.Errorf("tunnel %s maxConcurrentPairs>1 requires exactly one listen endpoint and one connect endpoint", t.ID)
 		}
 		if err := validatePacketFraming(t); err != nil {
 			return cfg, err
@@ -217,6 +241,10 @@ func loadRaw(raw []byte) (Config, error) {
 		}
 	}
 	return cfg, nil
+}
+
+func hasTriggeredPairing(fieldMode, consumerMode string) bool {
+	return (fieldMode == "listen" && consumerMode == "connect") || (fieldMode == "connect" && consumerMode == "listen")
 }
 
 func validateProviders(cfg *Config) error {
