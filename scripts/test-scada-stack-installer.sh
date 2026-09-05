@@ -10,7 +10,7 @@ usage(){ echo "Uso: $0 GATEWAY.tar.gz GATEWAY.tar.gz.sha256" >&2; exit 64; }
 ARCHIVE="$(realpath "$1")"
 CHECKSUM="$(realpath "$2")"
 [[ -f "$ARCHIVE" && -f "$CHECKSUM" ]] || { echo "archive/checksum ausente" >&2; exit 2; }
-for cmd in dpkg-deb sha256sum; do command -v "$cmd" >/dev/null || { echo "$cmd ausente" >&2; exit 69; }; done
+for cmd in dpkg-deb sha256sum python3; do command -v "$cmd" >/dev/null || { echo "$cmd ausente" >&2; exit 69; }; done
 
 tmp="$(mktemp -d)"
 cleanup(){ rm -rf "$tmp"; }
@@ -31,6 +31,18 @@ EOFCONTROL
   dpkg-deb --build "$pkgdir" "$out" >/dev/null
 }
 
+build_rapid_zip(){
+  local zip_out="$1" deb_in="$2"
+  python3 - "$zip_out" "$deb_in" <<'PY'
+import os
+import sys
+import zipfile
+zip_out, deb_in = sys.argv[1:]
+with zipfile.ZipFile(zip_out, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+    zf.write(deb_in, arcname=os.path.basename(deb_in))
+PY
+}
+
 make_kit(){
   local dir="$1"
   rm -rf "$dir"
@@ -45,7 +57,17 @@ make_kit "$kit"
 build_rapid_deb "$kit/rapidscada_6.4.7_all.deb" 6.4.7
 bash "$INSTALLER" --dry-run --dir "$kit" >/dev/null
 
-echo "stack installer positive dry-run: OK"
+echo "stack installer positive DEB dry-run: OK"
+
+kit="$tmp/ok-zip"
+make_kit "$kit"
+fixture_deb="$tmp/rapidscada_6.4.7_all.deb"
+build_rapid_deb "$fixture_deb" 6.4.7
+build_rapid_zip "$kit/rapidscada_6.4.7_linux_en.zip" "$fixture_deb"
+zip_sha="$(sha256sum "$kit/rapidscada_6.4.7_linux_en.zip" | awk '{print $1}')"
+RC_SCADA_RAPID_SHA256="$zip_sha" bash "$INSTALLER" --dry-run --dir "$kit" >/dev/null
+
+echo "stack installer positive official-style ZIP dry-run: OK"
 
 kit="$tmp/wrong-version"
 make_kit "$kit"
