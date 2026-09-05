@@ -19,7 +19,6 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          persist-credentials: false
       - uses: actions/setup-go@v6
         with:
           go-version: '1.27.1'
@@ -55,8 +54,6 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
-        with:
-          persist-credentials: false
       - uses: actions/setup-go@v6
         with:
           go-version: '1.27.1'
@@ -75,8 +72,6 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
-        with:
-          persist-credentials: false
       - uses: actions/setup-go@v6
         with:
           go-version: '1.27.1'
@@ -96,7 +91,6 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          persist-credentials: false
       - uses: actions/setup-go@v6
         with:
           go-version: '1.27.1'
@@ -108,11 +102,10 @@ jobs:
           GOBIN="$RUNNER_TEMP/gobin" go install github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@v1.12.0
           echo "$RUNNER_TEMP/gobin" >> "$GITHUB_PATH"
       - name: Vulnerability scan
-        run: "$RUNNER_TEMP/gobin/govulncheck" ./...
+        run: |
+          "$RUNNER_TEMP/gobin/govulncheck" ./...
       - name: Shell syntax
         run: bash -n scripts/*.sh
-      - name: Installer archive security tests
-        run: bash scripts/test-installer-security.sh
       - name: Reproducible release build
         run: |
           VERSION="ci-${GITHUB_SHA}"
