@@ -16,12 +16,14 @@ mkdir -p "$DIST_DIR"
 for arch in $ARCHES; do
   pkg="rc-gateway-umbrella_${VERSION}_linux_${arch}"
   stage="$DIST_DIR/$pkg"
-  mkdir -p "$stage/bin" "$stage/systemd" "$stage/configs" "$stage/scripts"
+  mkdir -p "$stage/bin" "$stage/systemd" "$stage/configs" "$stage/scripts" "$stage/docs"
   ldflags="-s -w -X main.version=$VERSION -X main.commit=$COMMIT -X main.buildDate=$BUILD_DATE"
   CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath -buildvcs=false -ldflags "$ldflags" -o "$stage/bin/rc-gateway" ./cmd/rc-gateway
   cp systemd/rc-gateway-umbrella.service "$stage/systemd/"
   cp configs/*.json "$stage/configs/"
-  cp scripts/install-release.sh scripts/rollback-release.sh "$stage/scripts/"
+  cp scripts/install-release.sh scripts/rollback-release.sh scripts/probe-usb-hid.sh "$stage/scripts/"
+  cp docs/RUNBOOK.md docs/USB_HID_COMAP.md docs/COMPATIBILITY_MATRIX.md "$stage/docs/"
+  cp README.md "$stage/README.md"
   chmod 0755 "$stage/bin/rc-gateway" "$stage/scripts/"*.sh
   printf '%s\n' "$VERSION" > "$stage/VERSION"
   {
