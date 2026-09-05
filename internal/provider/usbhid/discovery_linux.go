@@ -54,7 +54,7 @@ func resolveHIDRawDevice(cfg Config) (string, hidIdentity, error) {
 	}
 	matches := make([]match, 0, 1)
 	for _, entry := range entries {
-		if entry.IsDir() || !isHIDRawName(entry.Name()) {
+		if !isHIDRawName(entry.Name()) {
 			continue
 		}
 		identity, err := readHIDIdentity(entry.Name())
