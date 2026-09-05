@@ -18,6 +18,7 @@ type Config struct {
 }
 
 type Hooks struct {
+	OnReady func(providerID string)
 	OnOpen  func(sessionID string)
 	OnFrame func(sessionID, direction string, n uint64)
 	OnClose func(sessionID string, err error)
