@@ -58,11 +58,11 @@ func TestResolveExplicitDeviceVerifiesConfiguredIdentity(t *testing.T) {
 	writeFakeHID(t, classRoot, "hidraw0", "1234", "5678", "SERIAL-A", "Controller A")
 
 	_, _, err := resolveHIDRawDevice(Config{
-		ID:         "usb",
-		Socket:     "/run/rc-gateway/usb.sock",
-		Device:     "/dev/hidraw0",
-		VendorID:   "9999",
-		ProductID:  "5678",
+		ID:           "usb",
+		Socket:       "/run/rc-gateway/usb.sock",
+		Device:       "/dev/hidraw0",
+		VendorID:     "9999",
+		ProductID:    "5678",
 		SerialNumber: "SERIAL-A",
 	})
 	if err == nil || !strings.Contains(err.Error(), "does not match selector") {
