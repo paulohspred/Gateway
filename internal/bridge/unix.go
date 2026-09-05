@@ -19,14 +19,18 @@ func (s *unixListenSource) Close() error {
 	_ = os.Remove(s.path)
 	return err
 }
+
 func newUnixSource(ctx context.Context, ep Endpoint) (connectionSource, error) {
-	if ep.TLS.Enabled {
-		return nil, fmt.Errorf("TLS is not valid on unix endpoints")
+	if ep.TLS.Enabled || ep.TLS.CAFile != "" || ep.TLS.CertFile != "" || ep.TLS.KeyFile != "" || ep.TLS.ServerName != "" || ep.TLS.RequireClientCert {
+		return nil, fmt.Errorf("TLS options are not valid on unix endpoints")
 	}
 	switch ep.Mode {
 	case "listen":
 		if !filepath.IsAbs(ep.Bind) {
 			return nil, fmt.Errorf("unix listen path must be absolute")
+		}
+		if err := os.MkdirAll(filepath.Dir(ep.Bind), 0o750); err != nil {
+			return nil, fmt.Errorf("create unix socket dir: %w", err)
 		}
 		if err := removeStaleSocket(ep.Bind); err != nil {
 			return nil, err
@@ -34,6 +38,11 @@ func newUnixSource(ctx context.Context, ep Endpoint) (connectionSource, error) {
 		ln, err := net.Listen("unix", ep.Bind)
 		if err != nil {
 			return nil, err
+		}
+		if err := os.Chmod(ep.Bind, 0o660); err != nil {
+			_ = ln.Close()
+			_ = os.Remove(ep.Bind)
+			return nil, fmt.Errorf("chmod unix socket: %w", err)
 		}
 		base := &listenSource{ln: ln}
 		s := &unixListenSource{listenSource: base, path: ep.Bind}
@@ -54,6 +63,7 @@ func newUnixSource(ctx context.Context, ep Endpoint) (connectionSource, error) {
 		return nil, fmt.Errorf("unsupported mode %q", ep.Mode)
 	}
 }
+
 func removeStaleSocket(path string) error {
 	info, err := os.Lstat(path)
 	if os.IsNotExist(err) {
