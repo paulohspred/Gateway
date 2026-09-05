@@ -16,6 +16,13 @@ type bindClaim struct {
 	bind  string
 }
 
+type usbSelectorClaim struct {
+	label        string
+	vendorID     string
+	productID    string
+	serialNumber string
+}
+
 // LoadStrict is the production configuration entrypoint. It rejects unknown
 // JSON fields and trailing JSON values before applying schema defaults and
 // validation to the same byte snapshot, then checks resource conflicts that
@@ -67,7 +74,7 @@ func validateProductionConflicts(cfg *Config) error {
 	}
 
 	physicalDevices := map[string]string{}
-	usbSelectors := map[string]string{}
+	usbSelectors := []usbSelectorClaim{}
 	providerSockets := map[string]string{}
 	providerSocketNetworks := map[string]string{}
 	unixListeners := map[string]string{}
@@ -92,6 +99,27 @@ func validateProductionConflicts(cfg *Config) error {
 		physicalDevices[device] = label
 		return nil
 	}
+	claimUSBSelector := func(label string, p USBHIDProvider) error {
+		if p.VendorID == "" {
+			return nil
+		}
+		for _, prev := range usbSelectors {
+			if prev.vendorID != p.VendorID || prev.productID != p.ProductID {
+				continue
+			}
+			// An empty serial is a wildcard for every unit with the same VID/PID.
+			// Two exact serials may coexist only when they are different.
+			if prev.serialNumber == "" || p.SerialNumber == "" || prev.serialNumber == p.SerialNumber {
+				selector := p.VendorID + ":" + p.ProductID
+				if p.SerialNumber != "" {
+					selector += ":" + p.SerialNumber
+				}
+				return fmt.Errorf("USB HID selector %q for %s overlaps selector used by %s", selector, label, prev.label)
+			}
+		}
+		usbSelectors = append(usbSelectors, usbSelectorClaim{label: label, vendorID: p.VendorID, productID: p.ProductID, serialNumber: p.SerialNumber})
+		return nil
+	}
 
 	for _, p := range cfg.SerialProviders {
 		label := "serialProvider " + p.ID
@@ -114,12 +142,9 @@ func validateProductionConflicts(cfg *Config) error {
 			if err := claimPhysicalDevice(label, "USB HID", p.Device); err != nil {
 				return err
 			}
-		} else {
-			selector := p.VendorID + ":" + p.ProductID + ":" + p.SerialNumber
-			if prev, exists := usbSelectors[selector]; exists {
-				return fmt.Errorf("USB HID selector %q for %s is already used by %s", selector, label, prev)
-			}
-			usbSelectors[selector] = label
+		}
+		if err := claimUSBSelector(label, p); err != nil {
+			return err
 		}
 		if err := claimProviderSocket(label, p.Socket, "unixpacket"); err != nil {
 			return err
