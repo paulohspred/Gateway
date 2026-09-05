@@ -4,13 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/paulohspdev-cmyk/ProjetoGerador/gateway-umbrella/internal/transport/netutil"
+	"github.com/paulohspred/Gateway/internal/transport/netutil"
 )
 
 type Endpoint struct {
@@ -29,6 +30,7 @@ type SessionInfo struct {
 }
 
 type Hooks struct {
+	OnReady    func(tunnelID string)
 	OnOpen     func(SessionInfo)
 	OnDatagram func(sessionID, direction string, n uint64)
 	OnClose    func(SessionInfo, error)
@@ -123,6 +125,9 @@ func (t *Tunnel) Run(ctx context.Context) error {
 		return fmt.Errorf("udp tunnel %s listen: %w", t.ID, err)
 	}
 	defer listenerConn.Close()
+	if t.Hooks.OnReady != nil {
+		t.Hooks.OnReady(t.ID)
+	}
 
 	table := &sessionTable{sessions: make(map[string]*udpSession)}
 	var workers sync.WaitGroup
@@ -155,6 +160,22 @@ func (t *Tunnel) Run(ctx context.Context) error {
 		expected.close()
 		if t.Hooks.OnClose != nil {
 			t.Hooks.OnClose(expected.info, reason)
+		}
+		return true
+	}
+
+	removeIdleSession := func(key string, expected *udpSession, observedAt time.Time) bool {
+		table.mu.Lock()
+		current, ok := table.sessions[key]
+		if !ok || current != expected || observedAt.Sub(expected.lastSeenAt()) < t.IdleTimeout {
+			table.mu.Unlock()
+			return false
+		}
+		delete(table.sessions, key)
+		table.mu.Unlock()
+		expected.close()
+		if t.Hooks.OnClose != nil {
+			t.Hooks.OnClose(expected.info, nil)
 		}
 		return true
 	}
@@ -201,7 +222,7 @@ func (t *Tunnel) Run(ctx context.Context) error {
 				}
 				table.mu.Unlock()
 				for _, item := range stale {
-					removeSession(item.key, item.s, nil)
+					removeIdleSession(item.key, item.s, now)
 				}
 			}
 		}
@@ -211,6 +232,7 @@ func (t *Tunnel) Run(ctx context.Context) error {
 		key := peer.String()
 		table.mu.Lock()
 		if existing := table.sessions[key]; existing != nil {
+			existing.touch()
 			table.mu.Unlock()
 			return existing, key, nil
 		}
@@ -266,7 +288,11 @@ func (t *Tunnel) Run(ctx context.Context) error {
 						t.Hooks.OnDatagram(session.info.SessionID, inboundDirection, uint64(written))
 					}
 					if writeErr != nil || written != n {
-						removeSession(key, session, writeErr)
+						reason := writeErr
+						if reason == nil {
+							reason = io.ErrShortWrite
+						}
+						removeSession(key, session, reason)
 						return
 					}
 				}
@@ -321,7 +347,11 @@ func (t *Tunnel) Run(ctx context.Context) error {
 			t.Hooks.OnDatagram(session.info.SessionID, outboundDirection, uint64(written))
 		}
 		if writeErr != nil || written != n {
-			removeSession(key, session, writeErr)
+			reason := writeErr
+			if reason == nil {
+				reason = io.ErrShortWrite
+			}
+			removeSession(key, session, reason)
 			if t.Hooks.OnDrop != nil {
 				t.Hooks.OnDrop(t.ID, "target_write")
 			}
