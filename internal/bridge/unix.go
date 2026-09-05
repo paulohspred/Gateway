@@ -24,10 +24,17 @@ func newUnixSource(ctx context.Context, ep Endpoint) (connectionSource, error) {
 	if ep.TLS.Enabled || ep.TLS.CAFile != "" || ep.TLS.CertFile != "" || ep.TLS.KeyFile != "" || ep.TLS.ServerName != "" || ep.TLS.RequireClientCert {
 		return nil, fmt.Errorf("TLS options are not valid on unix endpoints")
 	}
+	network := ep.Network
+	if network == "" {
+		network = "unix"
+	}
+	if network != "unix" && network != "unixpacket" {
+		return nil, fmt.Errorf("unsupported unix network %q", network)
+	}
 	switch ep.Mode {
 	case "listen":
 		if !filepath.IsAbs(ep.Bind) {
-			return nil, fmt.Errorf("unix listen path must be absolute")
+			return nil, fmt.Errorf("%s listen path must be absolute", network)
 		}
 		if err := os.MkdirAll(filepath.Dir(ep.Bind), 0o750); err != nil {
 			return nil, fmt.Errorf("create unix socket dir: %w", err)
@@ -35,7 +42,7 @@ func newUnixSource(ctx context.Context, ep Endpoint) (connectionSource, error) {
 		if err := removeStaleSocket(ep.Bind); err != nil {
 			return nil, err
 		}
-		ln, err := net.Listen("unix", ep.Bind)
+		ln, err := net.Listen(network, ep.Bind)
 		if err != nil {
 			return nil, err
 		}
@@ -50,7 +57,7 @@ func newUnixSource(ctx context.Context, ep Endpoint) (connectionSource, error) {
 		return s, nil
 	case "connect":
 		if !filepath.IsAbs(ep.Address) {
-			return nil, fmt.Errorf("unix connect path must be absolute")
+			return nil, fmt.Errorf("%s connect path must be absolute", network)
 		}
 		if ep.DialTimeout <= 0 {
 			ep.DialTimeout = 10 * time.Second
@@ -58,7 +65,7 @@ func newUnixSource(ctx context.Context, ep Endpoint) (connectionSource, error) {
 		if ep.Reconnect <= 0 {
 			ep.Reconnect = 5 * time.Second
 		}
-		return &dialSource{network: "unix", address: ep.Address, timeout: ep.DialTimeout, reconnect: ep.Reconnect}, nil
+		return &dialSource{network: network, address: ep.Address, timeout: ep.DialTimeout, reconnect: ep.Reconnect}, nil
 	default:
 		return nil, fmt.Errorf("unsupported mode %q", ep.Mode)
 	}
