@@ -82,8 +82,8 @@ func (g *Gateway) Run(ctx context.Context) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			cfg := usbhid.Config{ID: p.ID, Socket: p.Socket, Device: p.Device, MaxReportBytes: p.MaxReportBytes, AllowWrite: p.AllowWrite}
-			hooks := g.hidHooks(p.ID, p.Device)
+			cfg := usbhid.Config{ID: p.ID, Socket: p.Socket, Device: p.Device, VendorID: p.VendorID, ProductID: p.ProductID, SerialNumber: p.SerialNumber, MaxReportBytes: p.MaxReportBytes, AllowWrite: p.AllowWrite}
+			hooks := g.hidHooks(p.ID, usbHIDLabel(p))
 			hooks.OnReady = func(string) { readyCh <- "usb-hid:" + p.ID }
 			if err := usbhid.Run(runCtx, cfg, g.logger, hooks); err != nil && runCtx.Err() == nil {
 				sendErr(errCh, fmt.Errorf("USB HID provider %s: %w", p.ID, err))
@@ -110,14 +110,15 @@ func (g *Gateway) Run(ctx context.Context) error {
 		hooks := g.tunnelHooks(cfgTunnel.ID)
 		hooks.OnReady = func(string) { readyCh <- "stream:" + cfgTunnel.ID }
 		tunnel := &bridge.Tunnel{
-			ID:           cfgTunnel.ID,
-			Field:        bridgeEndpoint("field", cfgTunnel.Field),
-			Consumer:     bridgeEndpoint("consumer", cfgTunnel.Consumer),
-			Logger:       g.logger,
-			Hooks:        hooks,
-			PairTimeout:  time.Duration(cfgTunnel.PairTimeoutS) * time.Second,
-			WriteTimeout: time.Duration(cfgTunnel.WriteTimeoutS) * time.Second,
-			DrainTimeout: time.Duration(cfgTunnel.DrainTimeoutS) * time.Second,
+			ID:            cfgTunnel.ID,
+			Field:         bridgeEndpoint("field", cfgTunnel.Field),
+			Consumer:      bridgeEndpoint("consumer", cfgTunnel.Consumer),
+			PacketFraming: cfgTunnel.PacketFraming,
+			Logger:        g.logger,
+			Hooks:         hooks,
+			PairTimeout:   time.Duration(cfgTunnel.PairTimeoutS) * time.Second,
+			WriteTimeout:  time.Duration(cfgTunnel.WriteTimeoutS) * time.Second,
+			DrainTimeout:  time.Duration(cfgTunnel.DrainTimeoutS) * time.Second,
 		}
 		wg.Add(1)
 		go func() {
@@ -187,6 +188,17 @@ func (g *Gateway) Run(ctx context.Context) error {
 
 func bridgeEndpoint(name string, ep config.Endpoint) bridge.Endpoint {
 	return bridge.Endpoint{Name: name, Mode: ep.Mode, Network: ep.Network, Bind: ep.Bind, Address: ep.Address, AllowedCIDRs: ep.AllowedCIDRs, DialTimeout: time.Duration(ep.DialTimeoutS) * time.Second, Reconnect: time.Duration(ep.ReconnectS) * time.Second, KeepAlive: time.Duration(ep.KeepAliveS) * time.Second, TLS: bridge.TLSOptions{Enabled: ep.TLS.Enabled, CAFile: ep.TLS.CAFile, CertFile: ep.TLS.CertFile, KeyFile: ep.TLS.KeyFile, ServerName: ep.TLS.ServerName, RequireClientCert: ep.TLS.RequireClientCert}}
+}
+
+func usbHIDLabel(p config.USBHIDProvider) string {
+	if p.Device != "" {
+		return p.Device
+	}
+	label := "hid:" + p.VendorID + ":" + p.ProductID
+	if p.SerialNumber != "" {
+		label += ":" + p.SerialNumber
+	}
+	return label
 }
 
 func udpEndpoint(ep config.UDPEndpoint) datagram.Endpoint {
