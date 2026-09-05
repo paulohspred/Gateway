@@ -40,7 +40,9 @@ jobs:
           unformatted="$(gofmt -l .)"
           if [[ -n "$unformatted" ]]; then
             printf '%s\n' "$unformatted"
-            gofmt -d $unformatted
+            while IFS= read -r file; do
+              [[ -n "$file" ]] && gofmt -d "$file"
+            done <<< "$unformatted"
             exit 1
           fi
       - name: Module integrity
