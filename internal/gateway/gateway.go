@@ -19,6 +19,8 @@ import (
 	"github.com/paulohspred/Gateway/internal/provider/usbhid"
 )
 
+const defaultMaxActivePairs = 1024
+
 type Gateway struct {
 	cfg        config.Config
 	sessions   *core.SessionRegistry
@@ -42,7 +44,13 @@ func (g *Gateway) Run(ctx context.Context) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	pairLimiter, err := bridge.NewPairLimiter(g.cfg.Limits.MaxActivePairs)
+	maxActivePairs := g.cfg.Limits.MaxActivePairs
+	if maxActivePairs <= 0 {
+		// Config loaded through LoadStrict is already defaulted. Keep New/Run
+		// robust for tests and embedders that construct Config directly.
+		maxActivePairs = defaultMaxActivePairs
+	}
+	pairLimiter, err := bridge.NewPairLimiter(maxActivePairs)
 	if err != nil {
 		return fmt.Errorf("stream pair limiter: %w", err)
 	}
@@ -59,7 +67,7 @@ func (g *Gateway) Run(ctx context.Context) error {
 	g.metrics.Set("rc_gateway_configured_serial_providers", int64(len(g.cfg.SerialProviders)))
 	g.metrics.Set("rc_gateway_configured_usb_hid_providers", int64(len(g.cfg.USBHIDProviders)))
 	g.metrics.Set("rc_gateway_configured_can_providers", int64(len(g.cfg.CANProviders)))
-	g.metrics.Set("rc_gateway_max_active_pairs", int64(g.cfg.Limits.MaxActivePairs))
+	g.metrics.Set("rc_gateway_max_active_pairs", int64(maxActivePairs))
 
 	g.admin.OnListening = func() { readyCh <- "admin" }
 	wg.Add(1)
@@ -115,7 +123,11 @@ func (g *Gateway) Run(ctx context.Context) error {
 		cfgTunnel := cfgTunnel
 		hooks := g.tunnelHooks(cfgTunnel.ID)
 		hooks.OnReady = func(string) { readyCh <- "stream:" + cfgTunnel.ID }
-		g.metrics.Set("rc_gateway_tunnel_"+cfgTunnel.ID+"_max_concurrent_pairs", int64(cfgTunnel.MaxConcurrentPairs))
+		maxConcurrentPairs := cfgTunnel.MaxConcurrentPairs
+		if maxConcurrentPairs <= 0 {
+			maxConcurrentPairs = 1
+		}
+		g.metrics.Set("rc_gateway_tunnel_"+cfgTunnel.ID+"_max_concurrent_pairs", int64(maxConcurrentPairs))
 		tunnel := &bridge.Tunnel{
 			ID:                 cfgTunnel.ID,
 			Field:              bridgeEndpoint("field", cfgTunnel.Field),
@@ -126,7 +138,7 @@ func (g *Gateway) Run(ctx context.Context) error {
 			PairTimeout:        time.Duration(cfgTunnel.PairTimeoutS) * time.Second,
 			WriteTimeout:       time.Duration(cfgTunnel.WriteTimeoutS) * time.Second,
 			DrainTimeout:       time.Duration(cfgTunnel.DrainTimeoutS) * time.Second,
-			MaxConcurrentPairs: cfgTunnel.MaxConcurrentPairs,
+			MaxConcurrentPairs: maxConcurrentPairs,
 			GlobalPairLimiter:  pairLimiter,
 		}
 		wg.Add(1)
@@ -177,7 +189,7 @@ func (g *Gateway) Run(ctx context.Context) error {
 
 	g.admin.SetReady(true)
 	g.metrics.Set("rc_gateway_ready", 1)
-	g.logger.Info("bridge runtime ready", "nodeId", g.cfg.NodeID, "tunnels", len(g.cfg.Tunnels), "udpTunnels", len(g.cfg.UDPTunnels), "serialProviders", len(g.cfg.SerialProviders), "usbHidProviders", len(g.cfg.USBHIDProviders), "canProviders", len(g.cfg.CANProviders), "maxActivePairs", g.cfg.Limits.MaxActivePairs)
+	g.logger.Info("bridge runtime ready", "nodeId", g.cfg.NodeID, "tunnels", len(g.cfg.Tunnels), "udpTunnels", len(g.cfg.UDPTunnels), "serialProviders", len(g.cfg.SerialProviders), "usbHidProviders", len(g.cfg.USBHIDProviders), "canProviders", len(g.cfg.CANProviders), "maxActivePairs", maxActivePairs)
 
 	select {
 	case <-ctx.Done():
