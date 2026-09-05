@@ -22,9 +22,12 @@ O critério de qualidade é a integridade e previsibilidade da ponte, não a qua
 | impairment user-space | validado |
 | mini-soak | gate automatizado |
 | TLS 1.3/mTLS | testes + configuração fail-closed |
-| Unix socket | validado |
+| Unix stream | validado |
+| Unix `SOCK_SEQPACKET` | validado com preservação de mensagens nos dois sentidos |
+| packet↔stream `length32be` | validado nos dois sentidos; framing obrigatório para mix packet/stream |
 | RS232/422/485 | software validado; HIL físico pendente |
 | USB HID `/dev/hidrawN` | transporte + framing/safety testados; HIL físico pendente |
+| USB HID VID/PID/serial | autodiscovery/validação fail-closed testados; HIL físico pendente |
 | UDP | software validado; sessão por peer limitada |
 | SocketCAN/CAN-FD | software validado; HIL físico pendente |
 | métricas/sessões | implementado/testado |
@@ -40,14 +43,21 @@ O critério de qualidade é a integridade e previsibilidade da ponte, não a qua
 | rotas admin GET-only | implementado/testado |
 | timeouts e limite de header HTTP | implementado |
 | scrape de métricas sem manter lock do data plane | teste de regressão |
+| configuração estrita sobre uma única fotografia de bytes | implementado; dupla leitura/TOCTOU removida |
 | TLS options com TLS desabilitado | rejeitadas |
 | mTLS sem CA | rejeitado |
 | listener TCP/UDP público sem allowlist | rejeitado |
 | IDs que colidem após sanitização de métricas | rejeitados |
 | socket provider canonicalizado | validado |
+| tipo de socket provider incompatível com tunnel | rejeitado antes do runtime |
+| transição `unixpacket`↔stream sem framing | rejeitada |
 | CAN startup removendo arquivo regular | bloqueado/testado |
-| USB HID fora de `/dev/hidrawN` | rejeitado |
-| USB HID symlink/non-character-device no runtime | rejeitado |
+| USB HID sem `device` nem VID/PID | rejeitado |
+| USB HID seletor VID/PID incompleto | rejeitado |
+| USB HID autodiscovery ambíguo | rejeitado; exige serial/path |
+| USB HID path + seletor apontando para hardware diferente | rejeitado |
+| USB HID ausente/non-character-device antes de readiness | rejeitado |
+| USB HID symlink | rejeitado |
 | USB HID write sem opt-in | bloqueado/testado |
 | UDP idle cleanup concorrente | revalidação de `lastSeen` |
 | readiness antes de componentes locais iniciarem | bloqueada por barrier de readiness |
@@ -59,12 +69,16 @@ O critério de qualidade é a integridade e previsibilidade da ponte, não a qua
 |---|---|
 | JSON estrito / campos desconhecidos | validado |
 | JSON extra/trailing document | validado |
+| arquivo lido uma vez em `LoadStrict` | implementado |
 | IDs únicos entre recursos | validado |
 | colisão TCP/admin bind | validado |
 | colisão UDP bind | validado |
 | colisão Unix/provider | validado |
 | porta serial duplicada | validado |
 | dispositivo físico serial/USB duplicado | validado |
+| seletor HID automático duplicado | validado |
+| provider socket `unix` vs `unixpacket` | validado |
+| `packetFraming` coerente com tipos de endpoint | validado |
 | `--check-config` sem abrir transports | validado |
 | `--version` | validado |
 | exemplos `configs/*.json` | gate CI |
@@ -111,6 +125,8 @@ As actions de terceiros usam tags de versão principal no workflow atual, com ch
 
 **Software field-test-ready** só pode ser declarado quando todos os jobs de `Gateway CI` estiverem verdes no mesmo código/change set. `PROJECT_STATE.md` registra o checkpoint promovido.
 
+O checkpoint `1262dce7256b3fb6015ea1ccba126d460fe4be7f` foi integralmente verde antes do incremento de identidade HID/unixpacket/framing. Mudanças posteriores precisam fechar novamente todos os gates no mesmo HEAD.
+
 ## Gates físicos restantes
 
 Mesmo com todos os gates automatizados verdes, permanecem necessários para **production validated**:
@@ -119,7 +135,7 @@ Mesmo com todos os gates automatizados verdes, permanecem necessários para **pr
 - controlador/dispositivo real;
 - VPN/4G/MikroTik real;
 - RS232/RS422/RS485 reais;
-- USB HID real, incluindo enumeração/VID/PID/report IDs e reconexão;
+- USB HID real, incluindo enumeração, VID/PID/serial, report descriptor, report IDs/tamanhos, permissões udev e reconexão;
 - InteliLite 4 AMF 9 real para determinar o protocolo de aplicação sobre USB e necessidade de adapter ComAp Direct;
 - UDP físico quando aplicável;
 - CAN/CAN-FD físico;
