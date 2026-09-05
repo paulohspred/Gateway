@@ -37,6 +37,34 @@ func TestLoadUSBHIDProviderDefaultsAndCanonicalizes(t *testing.T) {
 	}
 }
 
+func TestLoadUSBHIDProviderAcceptsStableSelector(t *testing.T) {
+	path := writeUSBHIDConfig(t, `{"schema":3,"nodeId":"gw","usbHidProviders":[{"id":"comap-usb","socket":"/run/rc-gateway/comap.sock","vendorId":"0x1A2b","productId":"3c","serialNumber":" ABC-123 "}],"tunnels":[]}`)
+	cfg, err := LoadStrict(path)
+	if err != nil {
+		t.Fatalf("LoadStrict: %v", err)
+	}
+	p := cfg.USBHIDProviders[0]
+	if p.Device != "" || p.VendorID != "1a2b" || p.ProductID != "003c" || p.SerialNumber != "ABC-123" {
+		t.Fatalf("selector not normalized: %#v", p)
+	}
+}
+
+func TestLoadRejectsIncompleteUSBHIDSelector(t *testing.T) {
+	path := writeUSBHIDConfig(t, `{"schema":3,"nodeId":"gw","usbHidProviders":[{"id":"usb","socket":"/run/rc-gateway/usb.sock","vendorId":"1234"}],"tunnels":[]}`)
+	_, err := LoadStrict(path)
+	if err == nil || !strings.Contains(err.Error(), "vendorId and productId") {
+		t.Fatalf("expected selector pair rejection, got %v", err)
+	}
+}
+
+func TestLoadRejectsDuplicateUSBHIDAutoSelector(t *testing.T) {
+	path := writeUSBHIDConfig(t, `{"schema":3,"nodeId":"gw","usbHidProviders":[{"id":"usb-a","socket":"/run/rc-gateway/a.sock","vendorId":"1234","productId":"5678","serialNumber":"S1"},{"id":"usb-b","socket":"/run/rc-gateway/b.sock","vendorId":"1234","productId":"5678","serialNumber":"S1"}],"tunnels":[]}`)
+	_, err := LoadStrict(path)
+	if err == nil || !strings.Contains(err.Error(), "USB HID selector") {
+		t.Fatalf("expected duplicate selector rejection, got %v", err)
+	}
+}
+
 func TestLoadRejectsUnsafeUSBHIDDevicePath(t *testing.T) {
 	path := writeUSBHIDConfig(t, `{"schema":3,"nodeId":"gw","usbHidProviders":[{"id":"usb","socket":"/run/rc-gateway/usb.sock","device":"/tmp/hidraw0"}],"tunnels":[]}`)
 	_, err := LoadStrict(path)
@@ -58,5 +86,37 @@ func TestLoadRejectsDuplicatePhysicalDeviceAcrossProviders(t *testing.T) {
 	_, err := LoadStrict(path)
 	if err == nil || !strings.Contains(err.Error(), "already used") {
 		t.Fatalf("expected physical device collision, got %v", err)
+	}
+}
+
+func TestLoadRejectsWrongSocketTypeForUSBHIDProvider(t *testing.T) {
+	path := writeUSBHIDConfig(t, `{"schema":3,"nodeId":"gw","usbHidProviders":[{"id":"usb","socket":"/run/rc-gateway/usb.sock","device":"/dev/hidraw0"}],"tunnels":[{"id":"bad","field":{"mode":"connect","network":"unix","address":"/run/rc-gateway/usb.sock"},"consumer":{"mode":"listen","network":"unix","bind":"/run/rc-gateway/consumer.sock"}}]}`)
+	_, err := LoadStrict(path)
+	if err == nil || !strings.Contains(err.Error(), "requires network unixpacket") {
+		t.Fatalf("expected provider socket type rejection, got %v", err)
+	}
+}
+
+func TestLoadAcceptsUnixpacketProviderConsumer(t *testing.T) {
+	path := writeUSBHIDConfig(t, `{"schema":3,"nodeId":"gw","usbHidProviders":[{"id":"usb","socket":"/run/rc-gateway/usb.sock","device":"/dev/hidraw0"}],"tunnels":[{"id":"packet","field":{"mode":"connect","network":"unixpacket","address":"/run/rc-gateway/usb.sock"},"consumer":{"mode":"listen","network":"unixpacket","bind":"/run/rc-gateway/consumer.sock"}}]}`)
+	if _, err := LoadStrict(path); err != nil {
+		t.Fatalf("expected unixpacket tunnel to validate: %v", err)
+	}
+}
+
+func TestLoadMixedUnixpacketAndTCPRequiresExplicitFraming(t *testing.T) {
+	without := writeUSBHIDConfig(t, `{"schema":3,"nodeId":"gw","tunnels":[{"id":"mixed","field":{"mode":"connect","network":"unixpacket","address":"/run/rc-gateway/source.sock"},"consumer":{"mode":"listen","network":"tcp","bind":"127.0.0.1:25001"}}]}`)
+	_, err := LoadStrict(without)
+	if err == nil || !strings.Contains(err.Error(), "packetFraming=length32be") {
+		t.Fatalf("expected framing requirement, got %v", err)
+	}
+
+	with := writeUSBHIDConfig(t, `{"schema":3,"nodeId":"gw","tunnels":[{"id":"mixed","packetFraming":"length32be","field":{"mode":"connect","network":"unixpacket","address":"/run/rc-gateway/source.sock"},"consumer":{"mode":"listen","network":"tcp","bind":"127.0.0.1:25001"}}]}`)
+	cfg, err := LoadStrict(with)
+	if err != nil {
+		t.Fatalf("expected explicit framing to validate: %v", err)
+	}
+	if cfg.Tunnels[0].PacketFraming != "length32be" {
+		t.Fatalf("unexpected framing %q", cfg.Tunnels[0].PacketFraming)
 	}
 }
