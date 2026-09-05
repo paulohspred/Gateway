@@ -59,6 +59,64 @@ func TestUnixpacketEndpointsPreserveMessageBoundaries(t *testing.T) {
 	}
 }
 
+func TestPacketDuplexPreservesSeparatePackets(t *testing.T) {
+	fieldBridge, fieldPeer := unixpacketPair(t)
+	defer fieldBridge.Close()
+	defer fieldPeer.Close()
+	consumerBridge, consumerPeer := unixpacketPair(t)
+	defer consumerBridge.Close()
+	defer consumerPeer.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- copyPacketDuplex(ctx, "pair", fieldBridge, consumerBridge, Hooks{}, time.Second, 100*time.Millisecond)
+	}()
+
+	fieldPackets := [][]byte{{0x10}, {0x20, 0x21}}
+	for _, packet := range fieldPackets {
+		if _, err := fieldPeer.Write(packet); err != nil {
+			t.Fatal(err)
+		}
+	}
+	buf := make([]byte, 32)
+	for i, want := range fieldPackets {
+		n, err := consumerPeer.Read(buf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(buf[:n]) != string(want) {
+			t.Fatalf("field packet %d changed: got %x want %x", i, buf[:n], want)
+		}
+	}
+
+	consumerPackets := [][]byte{{0xa0, 0xa1, 0xa2}, {0xb0}}
+	for _, packet := range consumerPackets {
+		if _, err := consumerPeer.Write(packet); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i, want := range consumerPackets {
+		n, err := fieldPeer.Read(buf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(buf[:n]) != string(want) {
+			t.Fatalf("consumer packet %d changed: got %x want %x", i, buf[:n], want)
+		}
+	}
+
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("copyPacketDuplex: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("packet duplex did not stop")
+	}
+}
+
 func TestPacketToStreamLength32BEPreservesFrames(t *testing.T) {
 	packetServer, packetClient := unixpacketPair(t)
 	defer packetServer.Close()
