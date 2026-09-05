@@ -14,6 +14,9 @@ STATE_DIR="/var/lib/rc-scada-stack"
 WEB_OVERRIDE="/etc/systemd/system/scadaweb6.service.d/10-rc-scada-loopback.conf"
 NGINX_SITE="/etc/nginx/sites-available/rc-scada"
 NGINX_LINK="/etc/nginx/sites-enabled/rc-scada"
+FIREWALL_NFT="/etc/rc-scada-internal-firewall.nft"
+FIREWALL_APPLY="/usr/local/sbin/rc-scada-internal-firewall-apply"
+FIREWALL_UNIT="/etc/systemd/system/rc-scada-internal-firewall.service"
 
 usage() {
   local code="${1:-64}"
@@ -158,8 +161,6 @@ JSON
 }
 resolve_gateway_config
 
-# Defense in depth: the embedded installer revalidates the archive and executes the
-# exact Gateway binary against the candidate config before any mutation.
 bash "$EMBEDDED_INSTALLER" --dry-run "$GATEWAY_ARCHIVE" "$GATEWAY_CHECKSUM" "$GATEWAY_CONFIG" >/dev/null
 
 mapfile -t rapid_debs < <(find "$SOURCE_DIR" -maxdepth 1 -type f -name 'rapidscada_*_all.deb' -print | sort)
@@ -203,7 +204,6 @@ verify_optional_source_checksum "$RAPID_SOURCE"
 
 check_supported_os() {
   [[ -r /etc/os-release ]] || die "/etc/os-release ausente" 69
-  # shellcheck disable=SC1091
   source /etc/os-release
   if [[ "${ID:-}" == "ubuntu" && "${VERSION_ID:-}" == "24.04" ]]; then
     return
@@ -291,9 +291,9 @@ if [[ $OFFLINE -eq 0 ]]; then
   log "Atualizando índice APT..."
   apt-get update
   log "Instalando pré-requisitos do stack..."
-  apt_install ca-certificates curl nginx unzip || die "falha ao instalar pré-requisitos" 69
+  apt_install ca-certificates curl nginx unzip nftables || die "falha ao instalar pré-requisitos" 69
 else
-  for cmd in curl nginx unzip; do command -v "$cmd" >/dev/null 2>&1 || die "modo offline: comando ausente: $cmd" 69; done
+  for cmd in curl nginx unzip nft; do command -v "$cmd" >/dev/null 2>&1 || die "modo offline: comando ausente: $cmd" 69; done
 fi
 
 if [[ "$RAPID_SOURCE_KIND" == "zip" && -z "$RAPID_DEB" ]]; then
@@ -326,6 +326,54 @@ for svc in scadaagent6.service scadaserver6.service scadacomm6.service scadaweb6
   systemctl cat "$svc" >/dev/null 2>&1 || die "unit Rapid SCADA ausente: $svc" 6
 done
 
+log "Protegendo portas internas do Rapid SCADA (10000/10002)..."
+command -v nft >/dev/null 2>&1 || die "nftables não está disponível" 69
+cat > "$FIREWALL_NFT" <<'NFT'
+table inet rc_scada_internal {
+    chain input {
+        type filter hook input priority -10; policy accept;
+
+        # Rapid SCADA Server e Agent somente por loopback.
+        ip daddr != 127.0.0.0/8 tcp dport { 10000, 10002 } counter drop
+        ip6 daddr != ::1 tcp dport { 10000, 10002 } counter drop
+    }
+}
+NFT
+chmod 0644 "$FIREWALL_NFT"
+nft -c -f "$FIREWALL_NFT" || die "configuração nftables do stack é inválida" 6
+
+cat > "$FIREWALL_APPLY" <<'SH'
+#!/bin/sh
+set -eu
+NFT="$(command -v nft)"
+if "$NFT" list table inet rc_scada_internal >/dev/null 2>&1; then
+    "$NFT" delete table inet rc_scada_internal
+fi
+exec "$NFT" -f /etc/rc-scada-internal-firewall.nft
+SH
+chmod 0755 "$FIREWALL_APPLY"
+
+cat > "$FIREWALL_UNIT" <<'UNIT'
+[Unit]
+Description=RC SCADA - protect Rapid SCADA internal TCP ports
+Before=scadaagent6.service scadaserver6.service scadacomm6.service scadaweb6.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/rc-scada-internal-firewall-apply
+ExecReload=/usr/local/sbin/rc-scada-internal-firewall-apply
+ExecStop=-/usr/sbin/nft delete table inet rc_scada_internal
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+chmod 0644 "$FIREWALL_UNIT"
+systemctl daemon-reload
+systemctl enable --now rc-scada-internal-firewall.service >/dev/null
+systemctl is-active --quiet rc-scada-internal-firewall.service || die "firewall interno do Rapid SCADA não ficou ativo" 7
+nft list table inet rc_scada_internal >/dev/null 2>&1 || die "tabela nftables rc_scada_internal não foi aplicada" 7
+
 log "Aplicando exposição segura do Rapid SCADA Webstation..."
 install -d -o root -g root -m 0755 "$(dirname "$WEB_OVERRIDE")"
 cat > "$WEB_OVERRIDE" <<'UNIT'
@@ -335,7 +383,6 @@ ExecStart=/usr/bin/dotnet /opt/scada/ScadaWeb/ScadaWeb.dll --urls=http://127.0.0
 UNIT
 chmod 0644 "$WEB_OVERRIDE"
 
-# A VM limpa terá apenas o site default do Nginx. Não sobrescrevemos sites de terceiros.
 if [[ -d /etc/nginx/sites-enabled ]]; then
   mapfile -t foreign_sites < <(find /etc/nginx/sites-enabled -mindepth 1 -maxdepth 1 \! -name default \! -name rc-scada -print)
   if [[ ${#foreign_sites[@]} -gt 0 && "${RC_SCADA_ALLOW_EXISTING_NGINX:-0}" != "1" ]]; then
@@ -369,7 +416,7 @@ bash "$EMBEDDED_INSTALLER" "$GATEWAY_ARCHIVE" "$GATEWAY_CHECKSUM" "$GATEWAY_CONF
 
 log "Habilitando serviços Rapid SCADA e Nginx..."
 systemctl daemon-reload
-for svc in scadaagent6.service scadaserver6.service scadacomm6.service scadaweb6.service nginx.service; do
+for svc in rc-scada-internal-firewall.service scadaagent6.service scadaserver6.service scadacomm6.service scadaweb6.service nginx.service; do
   systemctl enable "$svc" >/dev/null
   systemctl restart "$svc"
 done
@@ -383,7 +430,7 @@ wait_service() {
   done
   return 1
 }
-for svc in rc-gateway.service scadaagent6.service scadaserver6.service scadacomm6.service scadaweb6.service nginx.service; do
+for svc in rc-gateway.service rc-scada-internal-firewall.service scadaagent6.service scadaserver6.service scadacomm6.service scadaweb6.service nginx.service; do
   wait_service "$svc" 60 || die "serviço não ficou ativo: $svc" 7
 done
 
@@ -398,6 +445,9 @@ for ((i=1; i<=60; i++)); do
 done
 [[ $rapid_web_ok -eq 1 ]] || die "Rapid SCADA Webstation/Nginx não respondeu em loopback" 7
 
+nft list table inet rc_scada_internal | grep -q '10000' || die "firewall interno não contém porta 10000" 7
+nft list table inet rc_scada_internal | grep -q '10002' || die "firewall interno não contém porta 10002" 7
+
 install -d -o root -g root -m 0750 "$STATE_DIR"
 rapid_source_sha="$(sha256sum "$RAPID_SOURCE" | awk '{print $1}')"
 cat > "$STATE_DIR/install-state.env" <<EOFSTATE
@@ -411,11 +461,14 @@ rapid_source_sha256=$rapid_source_sha
 rapid_deb_sha256=$RAPID_DEB_SHA256
 webstation_bind=127.0.0.1:10008
 nginx_bind=127.0.0.1:80
+rapid_internal_ports=10000,10002
+rapid_internal_firewall=nftables-loopback-only
 EOFSTATE
 chmod 0640 "$STATE_DIR/install-state.env"
 
 log "INSTALL OK: Gateway $GATEWAY_VERSION + Rapid SCADA $RAPID_VERSION"
 log "Gateway admin: http://127.0.0.1:18080"
 log "Rapid SCADA Web: http://127.0.0.1/ (loopback apenas)"
+log "Rapid SCADA 10000/10002: bloqueadas fora de loopback por nftables"
 warn "O Rapid SCADA upstream usa credencial inicial documentada pelo fornecedor. Altere as credenciais antes de qualquer exposição de rede."
 warn "Nenhum tunnel de campo é criado automaticamente quando rc-gateway.json não é fornecido. Configure a linha/controladora e então execute os acceptance tests Rapid SCADA."
