@@ -14,19 +14,20 @@ REQUIRE_SBOM="${REQUIRE_SBOM:-0}"
 rm -rf "$DIST_DIR"
 mkdir -p "$DIST_DIR"
 for arch in $ARCHES; do
-  pkg="rc-gateway-umbrella_${VERSION}_linux_${arch}"
+  pkg="rc-gateway_${VERSION}_linux_${arch}"
   stage="$DIST_DIR/$pkg"
   mkdir -p "$stage/bin" "$stage/systemd" "$stage/configs" "$stage/scripts" "$stage/docs"
   ldflags="-s -w -X main.version=$VERSION -X main.commit=$COMMIT -X main.buildDate=$BUILD_DATE"
   CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath -buildvcs=false -ldflags "$ldflags" -o "$stage/bin/rc-gateway" ./cmd/rc-gateway
-  cp systemd/rc-gateway-umbrella.service "$stage/systemd/"
+  cp systemd/rc-gateway.service "$stage/systemd/"
   cp configs/*.json "$stage/configs/"
-  cp scripts/install-release.sh scripts/rollback-release.sh scripts/probe-usb-hid.sh "$stage/scripts/"
-  cp docs/RUNBOOK.md docs/USB_HID_COMAP.md docs/COMPATIBILITY_MATRIX.md "$stage/docs/"
-  cp README.md "$stage/README.md"
+  cp scripts/install-release.sh scripts/rollback-release.sh scripts/probe-usb-hid.sh scripts/collect-diagnostics.sh scripts/vm-acceptance.sh scripts/run-soak.sh "$stage/scripts/"
+  cp docs/RUNBOOK.md docs/USB_HID_COMAP.md docs/COMPATIBILITY_MATRIX.md docs/PRODUCTION_MATRIX.md docs/VM_ACCEPTANCE.md docs/THREAT_MODEL.md docs/PROFESSIONALIZATION_PLAN.md "$stage/docs/"
+  cp README.md SECURITY.md SUPPORT.md CHANGELOG.md "$stage/"
   chmod 0755 "$stage/bin/rc-gateway" "$stage/scripts/"*.sh
   printf '%s\n' "$VERSION" > "$stage/VERSION"
   {
+    printf 'product=rc-gateway\n'
     printf 'version=%s\n' "$VERSION"
     printf 'commit=%s\n' "$COMMIT"
     printf 'buildDate=%s\n' "$BUILD_DATE"
