@@ -29,9 +29,16 @@ type Config struct {
 	DTR         bool
 }
 
-func Run(ctx context.Context, cfg Config, logger *slog.Logger) error {
+type Hooks struct {
+	OnReady func(providerID string)
+}
+
+func Run(ctx context.Context, cfg Config, logger *slog.Logger, hooks Hooks) error {
 	if err := Validate(cfg); err != nil {
 		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(cfg.Socket), 0o750); err != nil {
+		return fmt.Errorf("serial provider %s create socket dir: %w", cfg.ID, err)
 	}
 	if err := removeStaleSocket(cfg.Socket); err != nil {
 		return err
@@ -44,6 +51,12 @@ func Run(ctx context.Context, cfg Config, logger *slog.Logger) error {
 		_ = ln.Close()
 		_ = os.Remove(cfg.Socket)
 	}()
+	if err := os.Chmod(cfg.Socket, 0o660); err != nil {
+		return fmt.Errorf("serial provider %s chmod socket: %w", cfg.ID, err)
+	}
+	if hooks.OnReady != nil {
+		hooks.OnReady(cfg.ID)
+	}
 	go func() {
 		<-ctx.Done()
 		_ = ln.Close()
@@ -72,8 +85,8 @@ func Validate(cfg Config) error {
 	if !filepath.IsAbs(cfg.Socket) {
 		return fmt.Errorf("serial provider %s socket must be absolute", cfg.ID)
 	}
-	if strings.TrimSpace(cfg.Device) == "" {
-		return fmt.Errorf("serial provider %s device is required", cfg.ID)
+	if !filepath.IsAbs(strings.TrimSpace(cfg.Device)) {
+		return fmt.Errorf("serial provider %s device must be an absolute path", cfg.ID)
 	}
 	switch strings.ToLower(strings.TrimSpace(cfg.Standard)) {
 	case "rs232", "rs422", "rs485":
