@@ -134,7 +134,9 @@ func openHIDRaw(cfg Config) (reportDevice, error) {
 func bridgeReports(ctx context.Context, conn net.Conn, device reportDevice, cfg Config, sessionID string, hooks Hooks) error {
 	results := make(chan error, 2)
 	go func() { results <- copyReportsToConsumer(conn, device, cfg.MaxReportBytes, sessionID, hooks) }()
-	go func() { results <- copyReportsToDevice(device, conn, cfg.AllowWrite, cfg.MaxReportBytes, sessionID, hooks) }()
+	go func() {
+		results <- copyReportsToDevice(device, conn, cfg.AllowWrite, cfg.MaxReportBytes, sessionID, hooks)
+	}()
 
 	select {
 	case <-ctx.Done():
