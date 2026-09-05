@@ -1,10 +1,8 @@
 # Professionalization Plan — pre-v1 to industrial release
 
-This document separates work that can be proven in software from decisions or tests that require repository administration, a VM or physical hardware.
+This document separates repository/CI work from evidence that requires repository-owner administration, a VM or physical hardware.
 
 ## Promotion rule
-
-No item is considered complete because code exists. Promotion requires evidence on the exact release candidate.
 
 ```text
 implemented
@@ -16,92 +14,115 @@ implemented
   -> production_validated
 ```
 
+No item is complete merely because code exists. Promotion applies only to the exact candidate that produced the evidence.
+
 ## A. Software gates — repository/CI
 
-Required before the first release candidate is frozen:
+The pre-v1 professional baseline now includes:
 
 - bounded global and per-tunnel stream concurrency;
-- unambiguous pairing model for parallel tunnels;
-- real-socket parallel/concurrency tests in addition to in-memory stress;
-- race detector, static analysis, vulnerability scan and CodeQL;
-- minimum total coverage threshold with critical-package tests prioritized above raw percentage;
-- fuzz/property tests for parsers/framing/configuration boundaries;
-- strict config validation and documented schema/migration policy;
-- health/readiness/operational diagnostics sufficient for field triage;
-- deterministic amd64/arm64 builds, SBOM and installer attack tests;
-- authenticated release/provenance design before public production distribution;
-- changelog, security policy, support policy, contribution rules and threat model;
-- release naming and filesystem paths free of obsolete `umbrella` branding before v1.
+- unambiguous parallel pairing policy;
+- real-socket concurrency tests plus stress/churn gates;
+- race detector, `go vet`, Staticcheck, CodeQL and `govulncheck`;
+- workflow lint with `actionlint`;
+- `go mod verify` and tidy-diff gate;
+- minimum total coverage threshold;
+- parser/configuration fuzz seeds and malformed-input tests;
+- strict fail-closed configuration and documented schema policy;
+- health/readiness/status/sessions/Prometheus diagnostics;
+- systemd `Type=notify` readiness/watchdog integration;
+- deterministic amd64/arm64 release builds, SHA256, SBOM and installer attack tests;
+- immutable SHA pinning for third-party GitHub Actions;
+- Dependabot update proposals for Go modules and Actions;
+- release provenance/attestation workflow;
+- changelog, security policy, support policy, threat model and contribution policy;
+- canonical `rc-gateway` naming without legacy `umbrella` identity in new artifacts;
+- proprietary license/notice plus third-party binary-distribution notices.
+
+All of these remain subject to the exact-HEAD green requirement. Any code/workflow/release change invalidates the previous automated promotion until the complete gate chain is green again.
 
 ## B. Repository administration — owner action
 
-These are not writable through the current GitHub integration and must be configured in repository settings before `main` is treated as protected production history:
+The available GitHub integration cannot write branch-protection/ruleset or repository-visibility settings. Before `main` is treated as protected production history, the owner must apply and verify `GITHUB_PROTECTION.md`:
 
 - require pull requests for `main`;
-- block direct/force pushes and branch deletion;
-- require `Gateway CI` and CodeQL checks;
-- require conversations to be resolved before merge;
-- require review when a second qualified reviewer exists;
-- enable private vulnerability reporting if available;
-- verify release/tag signing policy.
+- require the Gateway CI and CodeQL checks;
+- require resolved conversations;
+- block direct/force pushes and deletion;
+- limit bypass;
+- enable private vulnerability reporting when available.
 
-`CODEOWNERS` exists for ownership routing, but a mandatory CODEOWNER approval should not be enabled while there is only one effective owner/reviewer because that can create an unusable workflow.
+Because the repository is currently public, proprietary licensing prevents authorized reuse but cannot prevent source visibility or technical cloning. If the requirement is to prevent third parties from obtaining the source, the owner must make the repository private.
 
-## C. License — owner decision after validation
+## C. License — selected
 
-No license is selected automatically. The repository owner will choose the product license after technical validation and before distribution under terms that depend on that license. Until then, do not copy third-party code merely because it is publicly visible.
+The selected model is **proprietary / All Rights Reserved**, not an open-source license. `LICENSE` grants no permission to use original RC Universal Gateway material without prior written authorization. `NOTICE` makes the source-visible/proprietary status explicit.
+
+Third-party components remain under their own licenses. Required notices are retained in `THIRD_PARTY_NOTICES.md` and release SBOM metadata.
+
+Before commercial contracting or transfer to a company, the copyright-holder identity in the proprietary notice should be reviewed by qualified legal counsel and changed to the desired legal person/entity if appropriate. That legal review does not change the technical validation gates.
 
 ## D. VM acceptance
 
-Initial Tier-1 candidate: Ubuntu Server 24.04 LTS on amd64; arm64 becomes Tier-1 only after runtime execution tests on real/emulated arm64 are accepted.
+Initial Tier-1 candidate: Ubuntu Server 24.04 LTS on amd64. Arm64 is build/reproducibility validated but should not be advertised as runtime Tier-1 until executed in a suitable arm64 acceptance environment.
 
-VM acceptance must cover installation, restart, crash recovery, health/readiness, configuration rejection, upgrade, rollback, resource limits, real loopback/network sockets, firewall behavior, reboot persistence and at least a 24-hour software soak. See `VM_ACCEPTANCE.md`.
+The exact CI/release artifact must pass:
+
+- clean install;
+- negative/unsafe configuration rejection;
+- systemd readiness and watchdog;
+- restart/crash recovery;
+- reboot persistence;
+- loopback/network transport acceptance;
+- upgrade and rollback;
+- diagnostic bundle generation;
+- resource observation;
+- 24-hour soak, then 7-day target.
+
+See `VM_ACCEPTANCE.md` and `scripts/vm-acceptance.sh`.
 
 ## E. Hardware-in-the-loop acceptance
 
 Required only for capabilities claimed as physically production-validated:
 
-- PUSR/USR/Teltonika reverse TCP and/or TCP server/client paths;
+- PUSR/USR/Teltonika or equivalent reverse/direct TCP paths;
 - MikroTik/VPN/4G route loss and recovery;
-- RS232, RS422 and RS485 including half-duplex direction behavior;
-- USB HID real enumeration, permissions, unplug/replug and ComAp InteliLite 4 AMF 9 application behavior;
+- RS232, RS422 and RS485 including multidrop and half-duplex behavior;
+- USB HID enumeration, permissions, unplug/replug and ComAp InteliLite 4 AMF 9 application behavior;
 - SocketCAN classic and CAN-FD with real interfaces/transceivers;
-- UDP where the target deployment uses it;
-- consumer restart and Gateway restart during active field traffic;
+- UDP where deployed;
+- consumer/Gateway restart under active field traffic;
 - power-cycle of modem/control equipment;
-- `tc netem` or equivalent controlled latency/loss/jitter/flapping.
+- controlled latency/loss/jitter/flapping.
 
 ## F. Soak acceptance
 
-Minimum: 24 hours. Target before broad production deployment: 7 days.
+Minimum: 24 hours. Target before broad production rollout: 7 days.
 
 Record at fixed intervals:
 
-- RSS/memory;
-- CPU;
+- RSS/memory and CPU;
 - file descriptors;
-- goroutine count when observable through a controlled diagnostic build or equivalent evidence;
 - active sessions/pairs;
 - open/close/error/reconnect counters;
 - bytes/datagrams/frames/reports;
-- service restarts and readiness transitions.
+- service restarts/readiness transitions;
+- any payload-integrity failure.
 
-Acceptance requires no unexplained monotonic resource growth, no payload-integrity failures and recovery within documented expectations after injected faults.
+Acceptance requires no unexplained monotonic resource growth and recovery within documented expectations after injected faults.
 
 ## G. Release freeze
 
-After all required software/VM/HIL gates are green:
-
-1. freeze the candidate commit;
-2. owner chooses and adds the license;
-3. rerun the full CI/security/release suite because adding release metadata changes the commit;
-4. configure/verify repository protection;
-5. create the signed/versioned release candidate;
-6. install that exact artifact in the acceptance VM;
-7. run HIL/soak against that exact version;
-8. record evidence in `PROJECT_STATE.md` and the release notes;
-9. only then promote status to `production validated` for the tested matrix.
+1. finish repository-only changes;
+2. obtain all automated gates green on the exact candidate;
+3. apply/verify repository-owner protection settings;
+4. install that exact artifact in the acceptance VM;
+5. complete VM soak/upgrade/rollback tests;
+6. run HIL for each claimed physical path;
+7. record evidence in `PROJECT_STATE.md` and release notes;
+8. create/sign the versioned release from the accepted commit;
+9. promote only the tested matrix to `production validated`.
 
 ## Non-goals
 
-Professionalism does not require adding MQTT broker, historian, register database, OPC UA model server or a generic industrial command plane to the bridge core. Those are separate products/adapters unless a future requirement justifies them.
+Professionalism does not require adding an MQTT broker, historian, register database, OPC UA model server or generic industrial command plane to the bridge core. Those remain separate products/adapters unless a future requirement justifies them.

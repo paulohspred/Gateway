@@ -11,6 +11,11 @@ BUILD_DATE="${BUILD_DATE:-$(date -u -d "@$SOURCE_DATE_EPOCH" +%Y-%m-%dT%H:%M:%SZ
 ARCHES="${ARCHES:-amd64 arm64}"
 DIST_DIR="${DIST_DIR:-$ROOT_DIR/dist}"
 REQUIRE_SBOM="${REQUIRE_SBOM:-0}"
+
+for required in LICENSE NOTICE THIRD_PARTY_NOTICES.md; do
+  [[ -f "$required" ]] || { echo "ERRO: arquivo legal obrigatório ausente: $required" >&2; exit 4; }
+done
+
 rm -rf "$DIST_DIR"
 mkdir -p "$DIST_DIR"
 for arch in $ARCHES; do
@@ -22,12 +27,13 @@ for arch in $ARCHES; do
   cp systemd/rc-gateway.service "$stage/systemd/"
   cp configs/*.json "$stage/configs/"
   cp scripts/install-release.sh scripts/rollback-release.sh scripts/probe-usb-hid.sh scripts/collect-diagnostics.sh scripts/vm-acceptance.sh scripts/run-soak.sh "$stage/scripts/"
-  cp docs/RUNBOOK.md docs/USB_HID_COMAP.md docs/COMPATIBILITY_MATRIX.md docs/PRODUCTION_MATRIX.md docs/VM_ACCEPTANCE.md docs/THREAT_MODEL.md docs/PROFESSIONALIZATION_PLAN.md "$stage/docs/"
-  cp README.md SECURITY.md SUPPORT.md CHANGELOG.md "$stage/"
+  cp docs/RUNBOOK.md docs/USB_HID_COMAP.md docs/COMPATIBILITY_MATRIX.md docs/PRODUCTION_MATRIX.md docs/VM_ACCEPTANCE.md docs/THREAT_MODEL.md docs/PROFESSIONALIZATION_PLAN.md docs/CONFIGURATION_COMPATIBILITY.md "$stage/docs/"
+  cp README.md SECURITY.md SUPPORT.md CHANGELOG.md LICENSE NOTICE THIRD_PARTY_NOTICES.md "$stage/"
   chmod 0755 "$stage/bin/rc-gateway" "$stage/scripts/"*.sh
   printf '%s\n' "$VERSION" > "$stage/VERSION"
   {
     printf 'product=rc-gateway\n'
+    printf 'license=Proprietary-All-Rights-Reserved\n'
     printf 'version=%s\n' "$VERSION"
     printf 'commit=%s\n' "$COMMIT"
     printf 'buildDate=%s\n' "$BUILD_DATE"

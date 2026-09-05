@@ -47,7 +47,11 @@ pkg="${roots[0]}"
 [[ -x "$pkg/bin/rc-gateway" ]] || { echo "ERRO: binário rc-gateway ausente/inexecutável." >&2; exit 4; }
 [[ -f "$pkg/systemd/rc-gateway.service" ]] || { echo "ERRO: unit systemd ausente." >&2; exit 4; }
 [[ -f "$pkg/VERSION" && -f "$pkg/MANIFEST" ]] || { echo "ERRO: metadados de release ausentes." >&2; exit 4; }
+for legal in LICENSE NOTICE THIRD_PARTY_NOTICES.md; do
+  [[ -f "$pkg/$legal" ]] || { echo "ERRO: arquivo legal obrigatório ausente: $legal" >&2; exit 4; }
+done
 grep -qx 'product=rc-gateway' "$pkg/MANIFEST" || { echo "ERRO: MANIFEST não identifica product=rc-gateway." >&2; exit 4; }
+grep -qx 'license=Proprietary-All-Rights-Reserved' "$pkg/MANIFEST" || { echo "ERRO: MANIFEST não identifica a licença proprietária esperada." >&2; exit 4; }
 version="$(tr -d '\r\n' < "$pkg/VERSION")"
 [[ "$version" =~ ^[A-Za-z0-9._+-]+$ ]] || { echo "ERRO: versão insegura: $version" >&2; exit 4; }
 

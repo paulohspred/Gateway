@@ -1,147 +1,148 @@
 # Production Readiness Matrix — RC Universal Gateway
 
-> Estado/handoff canônico: [`PROJECT_STATE.md`](./PROJECT_STATE.md). Procedimentos: [`RUNBOOK.md`](./RUNBOOK.md). Compatibilidade: [`COMPATIBILITY_MATRIX.md`](./COMPATIBILITY_MATRIX.md).
+> Canonical state: [`PROJECT_STATE.md`](./PROJECT_STATE.md). Procedures: [`RUNBOOK.md`](./RUNBOOK.md). Compatibility: [`COMPATIBILITY_MATRIX.md`](./COMPATIBILITY_MATRIX.md).
 
-O critério de qualidade é a integridade e previsibilidade da ponte, não a quantidade de protocolos interpretados.
+The quality target is transport integrity, bounded resource behavior, fail-closed configuration and recoverability. A larger protocol catalog is not a substitute for those properties.
 
-## Core e transportes
+## Core and transport plane
 
-| Capacidade | Estado automatizável |
+| Capability | Software evidence | Physical gate |
+|---|---|---|
+| raw duplex stream bridge | unit/integration tests | target topology |
+| TCP listen/connect | real sockets + integration tests | modem/device/VPN |
+| bounded parallel listen→connect pairs | real socket tests + global/per-tunnel limits | load profile |
+| byte-for-byte bidirectional transport | regression tests | target consumer/device |
+| pair/write/drain timeouts | tests | network impairment |
+| reconnect/churn | 1,000-cycle gate | modem/VPN flapping |
+| scale/concurrency | 1,000-pair gate | capacity acceptance |
+| FD/goroutine leak behavior | automated gate | long soak |
+| TLS 1.3/mTLS | tests + fail-closed config | real PKI/topology |
+| Unix stream | tested | local integration |
+| Unix `SOCK_SEQPACKET` | message-boundary tests | local integration |
+| packet↔stream `length32be` | bidirectional framing tests | compatible adapter |
+| RS232/RS422/RS485 | provider/config tests | physical interfaces/bus |
+| USB HID `/dev/hidrawN` | transport/safety tests | real HID/application protocol |
+| USB HID VID/PID/serial | discovery/re-enumeration tests | real IDs/device behavior |
+| UDP | bounded-session tests | real UDP target |
+| SocketCAN/CAN-FD | provider/frame tests | interface/transceiver |
+| metrics/sessions/status | tests | operator acceptance |
+
+## Security and availability
+
+| Gate | Current design |
 |---|---|
-| Tunnel raw duplex | validado por testes |
-| TCP listen/connect | validado por testes |
-| listen ↔ listen / listen ↔ connect | validado por sockets/testes |
-| byte-for-byte bidirecional | validado |
-| pair timeout | validado |
-| write timeout / slow peer | validado |
-| half-close drain | validado |
-| RST/queda abrupta | validado |
-| reconnect/churn | gate de 1.000 ciclos |
-| escala/concurrency | gate de 1.000 pares duplex |
-| FD/goroutine leak | gate automatizado |
-| impairment user-space | validado |
-| mini-soak | gate automatizado |
-| TLS 1.3/mTLS | testes + configuração fail-closed |
-| Unix stream | validado |
-| Unix `SOCK_SEQPACKET` | validado com preservação de mensagens nos dois sentidos |
-| packet↔stream `length32be` | validado nos dois sentidos; framing obrigatório para mix packet/stream |
-| RS232/422/485 | software validado; HIL físico pendente |
-| USB HID `/dev/hidrawN` | transporte + framing/safety testados; HIL físico pendente |
-| USB HID VID/PID/serial | autodiscovery/validação fail-closed testados; HIL físico pendente |
-| UDP | software validado; sessão por peer limitada |
-| SocketCAN/CAN-FD | software validado; HIL físico pendente |
-| métricas/sessões | implementado/testado |
-| CIDR allowlist | fail-closed para listener não-loopback |
-| TCP keepalive/NODELAY | implementado |
-| Command Plane | bloqueado |
+| admin exposure | loopback-only |
+| admin methods | GET-only operational endpoints |
+| HTTP limits | header/read/write/idle timeouts |
+| public TCP/UDP listener | CIDR allowlist required |
+| TLS options with TLS off | rejected |
+| mTLS without CA | rejected |
+| CAN transmit | disabled by default |
+| USB HID write | disabled by default |
+| provider socket/path collisions | rejected |
+| HID symlink/non-character device | rejected |
+| HID ambiguous selector | rejected |
+| HID path/identity mismatch | rejected |
+| provider socket type mismatch | rejected |
+| packet↔stream without framing | rejected |
+| unsafe archive entries | rejected/tested |
+| active stream pairs | globally and per-tunnel bounded |
+| UDP sessions | bounded |
+| readiness | barrier after local component initialization |
+| fatal component error | coordinated cancellation/shutdown |
+| systemd liveness | `Type=notify` + watchdog |
 
-## Segurança e disponibilidade
+## Configuration
 
-| Gate | Estado |
+| Gate | State |
 |---|---|
-| admin HTTP loopback-only | obrigatório por configuração |
-| rotas admin GET-only | implementado/testado |
-| timeouts e limite de header HTTP | implementado |
-| scrape de métricas sem manter lock do data plane | teste de regressão |
-| configuração estrita sobre uma única fotografia de bytes | implementado; dupla leitura/TOCTOU removida |
-| TLS options com TLS desabilitado | rejeitadas |
-| mTLS sem CA | rejeitado |
-| listener TCP/UDP público sem allowlist | rejeitado |
-| IDs que colidem após sanitização de métricas | rejeitados |
-| socket provider canonicalizado | validado |
-| tipo de socket provider incompatível com tunnel | rejeitado antes do runtime |
-| transição `unixpacket`↔stream sem framing | rejeitada |
-| CAN startup removendo arquivo regular | bloqueado/testado |
-| USB HID sem `device` nem VID/PID | rejeitado |
-| USB HID seletor VID/PID incompleto | rejeitado |
-| USB HID autodiscovery ambíguo | rejeitado; exige serial/path |
-| USB HID path + seletor apontando para hardware diferente | rejeitado |
-| USB HID ausente/non-character-device antes de readiness | rejeitado |
-| USB HID symlink | rejeitado |
-| USB HID write sem opt-in | bloqueado/testado |
-| UDP idle cleanup concorrente | revalidação de `lastSeen` |
-| readiness antes de componentes locais iniciarem | bloqueada por barrier de readiness |
-| erro fatal deixando goroutines órfãs | runtime cancela e aguarda shutdown |
+| strict JSON / unknown fields | enforced |
+| trailing JSON document | rejected |
+| single-snapshot `LoadStrict` | implemented |
+| IDs/binds/sockets/devices unique | validated |
+| physical serial/USB conflicts | validated |
+| provider socket network type | validated |
+| packet framing compatibility | validated |
+| global/per-tunnel resource limits | validated/defaulted |
+| `--check-config` without opening transports | implemented/tested |
+| all `configs/*.json` examples | CI gate |
+| schema policy | `CONFIGURATION_COMPATIBILITY.md` |
 
-## Configuração
+## Automated candidate gates
 
-| Gate | Estado |
-|---|---|
-| JSON estrito / campos desconhecidos | validado |
-| JSON extra/trailing document | validado |
-| arquivo lido uma vez em `LoadStrict` | implementado |
-| IDs únicos entre recursos | validado |
-| colisão TCP/admin bind | validado |
-| colisão UDP bind | validado |
-| colisão Unix/provider | validado |
-| porta serial duplicada | validado |
-| dispositivo físico serial/USB duplicado | validado |
-| seletor HID automático duplicado | validado |
-| provider socket `unix` vs `unixpacket` | validado |
-| `packetFraming` coerente com tipos de endpoint | validado |
-| `--check-config` sem abrir transports | validado |
-| `--version` | validado |
-| exemplos `configs/*.json` | gate CI |
+The exact candidate must pass, on the same HEAD:
 
-## Testes automatizados
+1. canonical-state consistency;
+2. `actionlint` for all workflows;
+3. formatting;
+4. `go mod verify` and tidy-diff;
+5. `go vet`;
+6. Staticcheck;
+7. shuffled unit/integration tests with coverage;
+8. minimum total coverage threshold;
+9. race detector;
+10. build and config-example validation;
+11. 1,000 concurrent-pair stress and real-socket concurrency tests;
+12. 1,000 TCP churn cycles/leak gate;
+13. impairment + mini-soak;
+14. `govulncheck`;
+15. CodeQL Go;
+16. shell syntax and malicious installer tests;
+17. reproducible amd64/arm64 builds;
+18. SHA256 + CycloneDX SBOM;
+19. installer dry-run against the real archive;
+20. release-content checks, including license and third-party notices;
+21. artifact publication.
 
-O workflow standalone `Gateway CI` executa no mesmo change set:
+Third-party GitHub Actions are pinned to immutable commit SHAs. Dependabot proposes dependency/action updates, but no update is trusted without the same gates.
 
-1. sincronismo do estado canônico;
-2. `gofmt` e `go vet`;
-3. testes unitários/integrados com shuffle e cobertura;
-4. race detector;
-5. build e validação de todas as configurações de exemplo;
-6. 1.000 pares duplex simultâneos;
-7. 1.000 ciclos de churn TCP com leak gate;
-8. impairment + mini-soak;
-9. `govulncheck`;
-10. shell syntax;
-11. testes de archive malicioso do instalador;
-12. build Linux amd64/arm64 reproduzível;
-13. SHA256 e SBOM CycloneDX;
-14. dry-run do instalador contra pacote real;
-15. artifact de release candidate.
+## Release and provenance
 
-As actions de terceiros usam tags de versão principal no workflow atual, com checkout sem persistência de credenciais. Ferramentas Go de supply chain permanecem pinadas. Pinagem das actions por commit SHA é melhoria pendente de revalidação do workflow.
+The canonical release contains only `rc-gateway` identity and paths. It includes:
 
-## Release e supply chain
+- deterministic amd64/arm64 binaries with embedded version/commit/build date;
+- `MANIFEST` and `VERSION`;
+- proprietary `LICENSE` and `NOTICE`;
+- `THIRD_PARTY_NOTICES.md` and CycloneDX SBOM;
+- SHA256 checksum;
+- hardened systemd unit;
+- validated config examples;
+- install, rollback, diagnostics, USB probe, VM acceptance and soak scripts;
+- operator documentation.
 
-- build Linux amd64/arm64 com `-trimpath` e metadados;
-- pacote determinístico/reproduzível;
-- SHA256;
-- SBOM CycloneDX;
-- `govulncheck` pinado/compatível com Go 1.27.1;
-- archives aceitam somente diretórios e arquivos regulares, sem links/entradas especiais;
-- uma única raiz de pacote é obrigatória;
-- dry-run valida pacote/config sem modificar host;
-- releases imutáveis com `current`/`previous`;
-- backups de configuração possuem retenção limitada;
-- troca de release é atômica;
-- restart exige readiness;
-- rollback automático em falha e rollback manual com health gate.
+The installer accepts only a single-root archive containing regular files/directories, validates product/license identity, validates the candidate config with the candidate binary, retains bounded config backups, switches releases atomically and health-gates activation/rollback.
 
-## Critério de promoção automatizável
+Version-tag release builds have a dedicated provenance-attestation workflow using GitHub OIDC and immutable action pinning.
 
-**Software field-test-ready** só pode ser declarado quando todos os jobs de `Gateway CI` estiverem verdes no mesmo código/change set. `PROJECT_STATE.md` registra o checkpoint promovido.
+## Licensing state
 
-O checkpoint `1262dce7256b3fb6015ea1ccba126d460fe4be7f` foi integralmente verde antes do incremento de identidade HID/unixpacket/framing. Mudanças posteriores precisam fechar novamente todos os gates no mesmo HEAD.
+Original RC Universal Gateway code is proprietary / All Rights Reserved. This is intentionally **not** an open-source license. Third-party components retain their own license rights and notices.
 
-## Gates físicos restantes
+Repository public visibility does not grant reuse permission. If source access itself must be restricted, repository visibility must be changed to private by the owner; licensing alone cannot prevent a public repository from being read or cloned.
 
-Mesmo com todos os gates automatizados verdes, permanecem necessários para **production validated**:
+## Promotion levels
 
-- PUSR/USR real;
-- controlador/dispositivo real;
-- VPN/4G/MikroTik real;
-- RS232/RS422/RS485 reais;
-- USB HID real, incluindo enumeração, VID/PID/serial, report descriptor, report IDs/tamanhos, permissões udev e reconexão;
-- InteliLite 4 AMF 9 real para determinar o protocolo de aplicação sobre USB e necessidade de adapter ComAp Direct;
-- UDP físico quando aplicável;
-- CAN/CAN-FD físico;
-- `tc netem`/falhas de rede em HIL;
-- power-cycle/reconnect reais;
-- soak mínimo 24 h, alvo 7 dias;
-- rollback em máquina de homologação.
+- **implemented** — code exists;
+- **software validated** — corresponding automated tests pass;
+- **software field-test-ready** — every automated candidate/security/release gate is green on the exact HEAD;
+- **VM accepted** — the exact artifact passes clean-VM install/upgrade/rollback/reboot/watchdog/soak acceptance;
+- **HIL accepted** — the exact artifact passes the claimed physical hardware/network/consumer matrix;
+- **production validated** — VM/HIL/soak evidence for the claimed matrix is recorded.
 
-Esses gates físicos não podem ser substituídos por CI.
+## Remaining non-CI gates
+
+Repository owner must still configure `main` protection/rulesets because the available GitHub integration cannot write administrative settings. See `GITHUB_PROTECTION.md`.
+
+Physical/VM gates remain:
+
+- clean Ubuntu Server 24.04 VM acceptance;
+- 24-hour soak, with 7-day target;
+- PUSR/USR/Teltonika or equivalent reverse/direct TCP hardware;
+- MikroTik/VPN/4G loss/recovery;
+- RS232, RS422, RS485 and multidrop bus behavior;
+- USB HID and ComAp InteliLite 4 AMF 9 application behavior;
+- UDP where deployed;
+- CAN/CAN-FD hardware;
+- power-cycle/reconnect and consumer/Gateway restart scenarios.
+
+CI cannot substitute for those physical claims.

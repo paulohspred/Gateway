@@ -14,7 +14,7 @@ jobs:
   quality:
     name: Quality, unit, race and config
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -24,8 +24,16 @@ jobs:
         with:
           go-version: '1.27.1'
           cache: true
+      - name: Install pinned quality tools
+        run: |
+          mkdir -p "$RUNNER_TEMP/gobin"
+          GOBIN="$RUNNER_TEMP/gobin" go install github.com/rhysd/actionlint/cmd/actionlint@914e7df21a07ef503a81201c76d2b11c789d3fca
+          GOBIN="$RUNNER_TEMP/gobin" go install honnef.co/go/tools/cmd/staticcheck@1285a6a5ec1e0ebb658f49e82b6c566a878cc3cb
+          echo "$RUNNER_TEMP/gobin" >> "$GITHUB_PATH"
       - name: Canonical project state
         run: bash scripts/check-project-state-updated.sh
+      - name: Workflow lint
+        run: "$RUNNER_TEMP/gobin/actionlint" .github/workflows/ci.yml .github/workflows/codeql.yml .github/workflows/release-attest.yml
       - name: Format
         run: |
           unformatted="$(gofmt -l .)"
@@ -34,13 +42,15 @@ jobs:
             gofmt -d $unformatted
             exit 1
           fi
+      - name: Module integrity
+        run: |
+          go mod verify
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
       - name: Vet
         run: go vet ./...
       - name: Staticcheck
-        run: |
-          mkdir -p "$RUNNER_TEMP/gobin"
-          GOBIN="$RUNNER_TEMP/gobin" go install honnef.co/go/tools/cmd/staticcheck@1285a6a5ec1e0ebb658f49e82b6c566a878cc3cb
-          "$RUNNER_TEMP/gobin/staticcheck" ./...
+        run: "$RUNNER_TEMP/gobin/staticcheck" ./...
       - name: Unit and integration tests
         run: go test ./... -shuffle=on -count=1 -coverprofile=coverage.out
       - name: Coverage threshold
@@ -61,6 +71,9 @@ jobs:
       - name: Coverage summary
         run: go tool cover -func=coverage.out | tail -1
       - name: Local CI script parity
+        env:
+          RC_GATEWAY_REQUIRE_TOOLING: '1'
+          RC_GATEWAY_MIN_COVERAGE: '58.0'
         run: bash scripts/ci.sh
 
   stress:
@@ -155,8 +168,17 @@ jobs:
           tar -tzf "$archive" | grep -q '/docs/COMPATIBILITY_MATRIX.md$'
           tar -tzf "$archive" | grep -q '/docs/VM_ACCEPTANCE.md$'
           tar -tzf "$archive" | grep -q '/docs/THREAT_MODEL.md$'
+          tar -tzf "$archive" | grep -q '/docs/CONFIGURATION_COMPATIBILITY.md$'
           tar -tzf "$archive" | grep -q '/README.md$'
-          tar -xOzf "$archive" --wildcards '*/MANIFEST' | grep -qx 'product=rc-gateway' || false
+          tar -tzf "$archive" | grep -q '/LICENSE$'
+          tar -tzf "$archive" | grep -q '/NOTICE$'
+          tar -tzf "$archive" | grep -q '/THIRD_PARTY_NOTICES.md$'
+          tar -xOzf "$archive" --wildcards '*/MANIFEST' | grep -qx 'product=rc-gateway'
+          tar -xOzf "$archive" --wildcards '*/MANIFEST' | grep -qx 'license=Proprietary-All-Rights-Reserved'
+          if tar -tzf "$archive" | grep -q 'rc-gateway-umbrella'; then
+            echo "legacy umbrella branding leaked into canonical release" >&2
+            exit 1
+          fi
       - name: Upload release candidates
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

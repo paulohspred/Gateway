@@ -1,8 +1,8 @@
-# RC Universal Gateway — estado do projeto e handoff
+# RC Universal Gateway — Canonical Project State
 
-> Leia este arquivo antes de alterar runtime, segurança, release ou contratos de transporte. Mudanças técnicas relevantes devem atualizar este documento no mesmo PR/conjunto de mudanças.
+> Read this file before changing runtime, security, release or transport contracts. Material changes must keep this handoff accurate.
 
-## Decisão fixa
+## Product decision
 
 ```text
 BRIDGE FIRST
@@ -11,209 +11,160 @@ NO DEVICE MEMORY DATABASE
 NO TELEMETRY HISTORIAN
 ```
 
-O Gateway é uma ponte universal de conectividade. Rapid SCADA, FUXA, software do fabricante ou outro driver interpreta registradores e protocolos de aplicação.
+RC Universal Gateway transports bytes, datagrams, frames and HID reports between field equipment and the software that understands the application protocol. It does not silently invent register maps, convert proprietary protocols, authorize industrial writes or act as a historian/broker/SCADA.
 
-## Repositório standalone
+## Repository and product identity
 
-O produto vive diretamente na raiz de `github.com/paulohspred/Gateway`.
+Repository: `github.com/paulohspred/Gateway`.
 
-Não existe mais a camada de diretório `gateway-umbrella/`. O módulo Go é:
-
-```text
-github.com/paulohspred/Gateway
-```
-
-Estrutura principal:
+Canonical pre-v1 runtime identity:
 
 ```text
-cmd/ internal/ configs/ docs/ scripts/ systemd/ .github/
+binary:   rc-gateway
+service:  rc-gateway.service
+root:     /opt/rc-gateway
+config:   /etc/rc-gateway.json
+runtime:  /run/rc-gateway
 ```
 
-## Estado deste ciclo
+The old `rc-gateway-umbrella` identity is not part of the canonical release. The installer detects a legacy installation and requires explicit migration instead of taking it over silently.
 
-Este ciclo reorganiza o produto como repositório standalone e aplica hardening de segurança, disponibilidade, testes e release. O incremento USB HID agora evolui de um caminho fixo `/dev/hidrawN` para identificação estável por VID/PID/serial, re-resolução após reenumeração, validação de tipo de socket e framing explícito ao cruzar transporte packet↔stream.
+## License
 
-O checkpoint `1262dce7256b3fb6015ea1ccba126d460fe4be7f` teve todos os jobs do `Gateway CI` verdes. Como o runtime mudou depois desse checkpoint, o HEAD atual volta ao estado **candidate / validation pending** até o workflow do mesmo HEAD fechar integralmente verde.
+Original RC Universal Gateway material is proprietary, **All Rights Reserved**. The controlling terms are in `LICENSE`; `NOTICE` makes explicit that public source visibility does not grant permission to use, execute, copy for reuse, modify, distribute, deploy, train models on, or create derivatives from the original project without prior written permission.
 
-### Mudanças realizadas
+Third-party software is not relicensed by those proprietary terms. Required notices are in `THIRD_PARTY_NOTICES.md`, and release artifacts contain a CycloneDX SBOM.
 
-- conteúdo do produto promovido para a raiz do repositório;
-- module/import path migrado para `github.com/paulohspred/Gateway`;
-- scripts restaurados como executáveis;
-- GitHub Actions standalone restaurado; checkout não persiste credenciais e ferramentas Go de supply chain permanecem pinadas;
-- registry de métricas passa a tirar snapshot e liberar lock antes de I/O HTTP;
-- admin HTTP passa a aceitar somente loopback pela configuração de produção;
-- admin recebe timeouts completos, limite de headers, rotas GET-only e `nosniff`;
-- opções TLS são fail-closed: configuração TLS com `enabled=false` é rejeitada;
-- listeners TCP/UDP públicos exigem allowlist independentemente do flag legado;
-- caminhos de sockets de providers são canonicalizados antes de comparação;
-- IDs que colidem depois da sanitização de métricas são rejeitados;
-- `LoadStrict` valida e normaliza a mesma fotografia de bytes lida do arquivo, removendo a dupla leitura/TOCTOU de configuração;
-- provider CAN não remove arquivo regular em caminho de socket e valida existência da interface no startup;
-- providers serial/Unix criam diretório de socket com permissões restritas e sockets `0660`;
-- provider USB HID Linux publica `unixpacket`, preserva reports, rejeita symlink/arquivo não-character-device e mantém escrita desabilitada por padrão;
-- USB HID aceita caminho explícito `/dev/hidrawN` ou seletor estável `vendorId` + `productId` + `serialNumber` opcional;
-- seleção HID automática exige exatamente um match em sysfs; ambiguidades falham e exigem serial/caminho explícito;
-- seletores HID sobrepostos são rejeitados: um seletor VID/PID sem serial não pode coexistir com outro provider que reivindique uma unidade do mesmo VID/PID;
-- dois providers com o mesmo VID/PID só podem coexistir por seletores de serial distintos;
-- quando caminho e seletor são configurados juntos, a identidade do equipamento é verificada antes do startup;
-- USB HID resolve e valida a presença do character device antes de declarar readiness;
-- quando configurado por identidade estável, o HID é re-resolvido a cada nova sessão para sobreviver a unplug/replug que altere o número `hidrawN`;
-- generic bridge suporta `network: "unixpacket"` para consumir corretamente providers HID/CAN;
-- packet↔packet usa uma escrita por mensagem em cada sentido, sem passar pelo write-all de stream;
-- configuração de produção conhece o tipo real dos provider sockets (`unix` para serial, `unixpacket` para HID/CAN) e rejeita mismatch antes do runtime;
-- mistura de `unixpacket` com TCP/Unix stream é fail-closed sem `packetFraming: "length32be"`;
-- `length32be` codifica cada pacote como comprimento uint32 big-endian + payload sem alteração, com limite de 64 KiB por frame;
-- runtime propaga `packetFraming` e seletores HID até os componentes responsáveis;
-- configuração detecta colisão de ID/socket/dispositivo físico e conflitos de seletor HID;
-- runtime inclui USB HID na barrier de readiness e nas métricas/sessões operacionais;
-- `scripts/probe-usb-hid.sh` coleta VID/PID, nome/serial HID, metadados USB pai, interface, report descriptor (tamanho + SHA-256) e permissões;
-- artifacts de release passam a levar o probe USB e documentação operacional de HID/compatibilidade/runbook, e o CI valida a presença desses arquivos;
-- o projeto externo `embyt/hid2tcp` foi usado apenas como referência conceitual; nenhum código GPL foi incorporado;
-- expiração UDP revalida `lastSeen` antes de remover sessão;
-- runtime só marca `/readyz` depois da inicialização local de todos os componentes configurados;
-- erro fatal de componente cancela o runtime interno e aguarda goroutines antes de retornar;
-- allowlist normaliza prefixos e IPv4-mapped peer addresses;
-- testes dedicados cobrem admin HTTP, lifecycle do admin, SessionRegistry, lifecycle/readiness do Gateway, lock de métricas, configuração fail-closed, allowlist, segurança de socket CAN, seletores HID, overlap de seletores, descoberta/reenumeração hidraw, unixpacket, atomicidade packet↔packet e framing packet↔stream;
-- instalador rejeita symlinks, hardlinks e entradas especiais no archive, exige uma única raiz e limita retenção de backups de configuração;
-- CI testa archives maliciosos do instalador;
-- documentação e catálogo foram alinhados ao estado bridge-first atual.
+## Implemented transport plane
 
-## Invariantes de segurança
-
-- `commandPlaneEnabled=true` é rejeitado;
-- CAN TX permanece `allowTransmit=false` por padrão;
-- USB HID write permanece `allowWrite=false` por padrão;
-- USB HID requer caminho `/dev/hidrawN` ou seletor VID/PID válido;
-- seletor VID/PID sem serial só é aceito em runtime quando existe exatamente um dispositivo correspondente;
-- seletores VID/PID que possam reivindicar a mesma unidade não podem coexistir silenciosamente entre providers;
-- caminho HID explícito rejeita symlink e nó que não seja character device;
-- caminho + seletor devem corresponder ao mesmo equipamento;
-- HID configurado precisa estar presente para o provider declarar readiness;
-- provider socket deve ser consumido com o tipo correto (`unix` ou `unixpacket`);
-- packet↔packet preserva uma mensagem por escrita;
-- transição `unixpacket`↔stream não pode perder fronteiras silenciosamente e exige framing explícito;
-- admin HTTP é loopback-only nesta release;
-- listener TCP/UDP não-loopback sem `allowedCidrs` é inválido;
-- TLS listener exige chave/certificado;
-- mTLS listener exige CA;
-- opções TLS não podem ficar silenciosamente configuradas com TLS desligado;
-- Unix/provider socket nunca pode sobrescrever arquivo comum;
-- IDs e recursos físicos não podem colidir silenciosamente;
-- release archive não pode conter links ou entradas especiais;
-- nenhum payload pode ser alterado silenciosamente;
-- recursos internos configuráveis possuem limites explícitos ou retenção limitada.
-
-## Transportes implementados
-
-- TCP listen/connect;
-- reverse TCP de modem;
-- TCP direto por IP/VPN;
-- TLS 1.3 e mTLS;
+- TCP listen/connect and reverse-TCP modem paths;
+- TLS 1.3 and mTLS;
 - Unix stream sockets;
 - Unix `SOCK_SEQPACKET` (`unixpacket`);
-- serial RS232/RS422/RS485 raw;
-- USB HID Linux via `/dev/hidrawN`, com autodiscovery por VID/PID/serial, re-resolução por sessão e reports preservados em `unixpacket`;
-- framing `length32be` opcional e explícito para transição packet↔stream;
-- UDP preservando datagramas e sessões por peer;
-- SocketCAN/CAN-FD preservando frames do ABI Linux;
-- pair timeout, write timeout, half-close drain, keepalive, NODELAY e CIDR allowlist;
-- métricas e sessões por transporte/direção.
+- RS232/RS422/RS485 raw serial provider;
+- UDP with peer sessions, idle expiry and bounded session/datagram limits;
+- SocketCAN classic and CAN-FD with packet preservation;
+- Linux USB HID via `/dev/hidrawN`;
+- USB HID stable discovery by VID/PID with optional serial, fail-closed ambiguity handling and re-resolution after re-enumeration;
+- explicit `length32be` framing when packet transports cross a stream boundary;
+- bounded stream concurrency with global and per-tunnel pair limits;
+- pair timeout, write timeout, half-close drain, TCP keepalive/NODELAY and CIDR allowlists.
 
-### Limite específico de USB/ComAp
+Transport support is not semantic protocol conversion. Modbus TCP, Modbus RTU/ASCII over appropriate transports, MQTT, OPC UA, IEC-104, DNP3 and proprietary TCP protocols can pass transparently when the endpoints understand them. J1939/CANopen and ComAp Direct remain application-layer responsibilities.
 
-O provider HID é transporte, não conversor de protocolo. Para a InteliLite 4 AMF 9, ainda é obrigatório HIL para confirmar enumeração Linux, VID/PID, serial, interface, HID report descriptor, tamanhos/report IDs e o protocolo de aplicação sobre USB. Não declarar Modbus via USB nem compatibilidade com InteliConfig por emulação até existir evidência de bancada/documentação suficiente. O adapter ComAp Direct, se necessário, deve permanecer separado do core bridge-first.
+## Security invariants
 
-O framing `length32be` também não transforma HID em Modbus; ele apenas preserva a fronteira dos reports quando um pacote precisa atravessar um stream TCP/Unix entre componentes compatíveis.
+- admin HTTP is loopback-only in this release;
+- command plane is disabled and `commandPlaneEnabled=true` is rejected;
+- non-loopback TCP/UDP listeners require `allowedCidrs`;
+- TLS options are fail-closed; mTLS listeners require CA material;
+- CAN transmit defaults to disabled;
+- USB HID write defaults to disabled;
+- provider paths/sockets are canonicalized and cannot overwrite ordinary files;
+- HID explicit paths reject symlinks and non-character devices;
+- HID identity selectors must resolve unambiguously and must agree with an explicit path when both are configured;
+- serial provider sockets use Unix stream; HID/CAN provider sockets use `unixpacket`;
+- packet↔stream transitions require explicit framing and never silently discard message boundaries;
+- configuration uses strict JSON and a single file snapshot in `LoadStrict`;
+- active stream pairs and UDP sessions are bounded;
+- release archives reject path traversal, links and special entries;
+- installation validates the candidate config before activation and rolls back when readiness fails.
 
-## Semântica de readiness
+## Runtime health and observability
 
-`/readyz` só fica verde quando:
+Local GET-only admin endpoints exist at both legacy and `/v1` aliases where implemented:
 
-- admin HTTP fez bind;
-- cada stream/packet tunnel criou suas sources/listeners;
-- cada UDP tunnel fez bind e resolveu target;
-- cada serial provider publicou seu socket local;
-- cada USB HID provider resolveu o equipamento configurado, validou o character device e publicou seu socket local;
-- cada CAN provider encontrou a interface configurada e publicou seu socket local.
+```text
+/healthz   /v1/healthz
+/readyz    /v1/readyz
+/status    /v1/status
+/sessions  /v1/sessions
+/metrics   /v1/metrics
+```
 
-Readiness **não** significa que a controladora respondeu ao protocolo de aplicação. O HID está presente e validado, mas o handshake ComAp Direct continua sendo responsabilidade do consumidor/adapter e do HIL. Serial é aberto quando uma sessão chega; CAN raw é aberto quando um consumidor conecta.
+Readiness means configured local runtime components initialized successfully; it does not mean a remote controller completed its application-protocol handshake.
 
-Se um HID selecionado por VID/PID/serial for reenumerado com outro `hidrawN` depois de uma sessão cair, a sessão seguinte reexecuta a resolução estável. Isso melhora recuperação de hotplug, mas não transforma readiness em monitor dinâmico de presença do dispositivo.
+The systemd unit uses `Type=notify`, readiness notification and watchdog operation. Linux `NOTIFY_SOCKET` pathname and abstract-namespace forms are supported. Watchdog timing is derived directly from `WATCHDOG_USEC` and is process-scoped when `WATCHDOG_PID` is provided.
 
-## Gates automatizados do novo repositório
+## Automated quality and supply-chain gates
 
-`.github/workflows/ci.yml` deve ficar verde no mesmo HEAD para promover a branch:
+The exact candidate commit must pass:
 
-1. handoff/documentação;
-2. `gofmt`;
-3. `go vet`;
-4. testes unitários/integrados com shuffle e cobertura;
-5. race detector;
-6. build e validação de todos `configs/*.json`;
-7. 1.000 pares duplex simultâneos;
-8. 1.000 ciclos TCP churn + leak gate;
-9. impairment + mini-soak;
-10. `govulncheck`;
-11. shell syntax;
-12. testes de segurança do instalador;
-13. build Linux amd64/arm64 reproduzível;
-14. SHA256;
-15. SBOM CycloneDX;
-16. dry-run real do instalador;
-17. validação de conteúdo do artifact, incluindo probe/documentação de campo;
-18. artifact de release.
+1. canonical-state consistency gate;
+2. GitHub Actions workflow lint (`actionlint`);
+3. `gofmt`;
+4. `go mod verify` plus tidy-diff check;
+5. `go vet`;
+6. Staticcheck;
+7. shuffled unit/integration tests with coverage;
+8. minimum total coverage threshold;
+9. race detector;
+10. build and validation of every `configs/*.json` example;
+11. real-socket parallel/concurrency tests plus 1,000-pair stress;
+12. 1,000 TCP churn cycles and leak gate;
+13. impairment and mini-soak gate;
+14. `govulncheck`;
+15. CodeQL Go analysis;
+16. shell syntax and malicious installer-archive tests;
+17. deterministic/reproducible Linux amd64 and arm64 release builds;
+18. SHA256 checksums and CycloneDX SBOM;
+19. installer dry-run against the real release archive;
+20. artifact content checks, including proprietary and third-party notices;
+21. provenance attestation workflow for versioned releases.
 
-As actions de terceiros usam tags de versão principal no workflow atual, com `persist-credentials: false` no checkout. As ferramentas Go de supply chain permanecem pinadas. Pinagem imutável das actions por commit SHA é melhoria de supply chain pendente de revalidação do workflow.
+Third-party GitHub Actions are pinned to immutable commit SHAs. Dependabot is configured to propose Go-module and GitHub Actions updates; updates still require the full validation chain.
 
-## Release industrial standalone
+## Configuration compatibility
 
-- raiz de instalação `/opt/rc-gateway-umbrella`;
-- releases imutáveis em `releases/<versão>`;
-- symlinks `current` e `previous`;
-- systemd com `ExecStartPre --check-config`;
-- Linux amd64/arm64 com `-trimpath` e metadados embutidos;
-- timestamp derivado do commit e pacotes reprodutíveis;
-- SHA256 + SBOM;
-- archive restrito a arquivos regulares/diretórios e uma única raiz;
-- configuração validada antes da troca;
-- backups de configuração com retenção limitada;
-- troca atômica de release;
-- readiness após restart;
-- rollback automático e rollback manual com health gate;
-- artifact leva `probe-usb-hid.sh`, README e documentação operacional relevante para diagnóstico em campo.
+Current canonical pre-v1 schema: `schema: 3`.
 
-## Checkpoint standalone atual
+The policy is documented in `CONFIGURATION_COMPATIBILITY.md`. Before v1, incompatible experimental changes must be explicit. After v1, incompatible configuration semantics require an explicit schema change and migration path. Security-sensitive configuration is never silently guessed or reinterpreted.
 
-- último checkpoint integralmente verde antes deste incremento: `1262dce7256b3fb6015ea1ccba126d460fe4be7f`;
-- HEAD atual: **validation pending** até todos os jobs automatizados fecharem verdes novamente;
-- depois dos gates automatizados, o status máximo continua sendo **software field-test-ready**;
-- USB/ComAp só pode avançar para **production validated** após HIL físico.
+## Release contract
 
-## Gates físicos restantes para production validated
+Canonical artifacts are named:
 
-1. PUSR/USR real em reverse TCP → Gateway → Rapid/FUXA/consumidor;
-2. dispositivo direto por IP/VPN;
-3. RS232 real;
-4. RS422 real quando aplicável;
-5. RS485 real, incluindo direção/half-duplex do hardware;
-6. USB HID real, incluindo InteliLite 4 AMF 9: enumeração, VID/PID/serial, descriptor, reports, read/write autorizado, permissões udev, unplug/replug e power-cycle;
-7. adapter ComAp Direct em HIL se o caso USB não expuser protocolo diretamente consumível;
-8. UDP real quando aplicável;
-9. CAN clássico físico;
-10. CAN-FD físico;
-11. VPN/4G/MikroTik real;
-12. power-cycle/reconnect de modem/controladora;
-13. `tc netem`/impairment em HIL;
-14. soak mínimo de 24 h, alvo de 7 dias;
-15. rollback em máquina de homologação.
+```text
+rc-gateway_<version>_linux_amd64.tar.gz
+rc-gateway_<version>_linux_arm64.tar.gz
+```
 
-`scripts/run-soak.sh` aceita de 1 a 604800 segundos.
+A release includes the binary, validated examples, systemd unit, install/rollback/diagnostic/VM scripts, operational documentation, `LICENSE`, `NOTICE`, `THIRD_PARTY_NOTICES.md`, `MANIFEST`, `VERSION` and SBOM. The manifest identifies `product=rc-gateway` and `license=Proprietary-All-Rights-Reserved`.
 
-## Regra de promoção
+Version-tag builds can be provenance-attested through GitHub OIDC. SHA256 is an integrity checksum; provenance/attestation is the publisher/build-chain evidence.
 
-- **validation pending**: código mudou e os novos gates ainda não fecharam;
-- **software field-test-ready**: todos os gates automatizados/release/supply-chain do mesmo HEAD estão verdes;
-- **production validated**: somente após HIL e soak físico da topologia real.
+## Current promotion rule
 
-Não reintroduzir polling, mapas de memória, historian ou command plane genérico no core.
+```text
+implemented
+  -> software_validated
+  -> software_field_test_ready
+  -> vm_accepted
+  -> hil_accepted
+  -> soak_accepted
+  -> production_validated
+```
+
+No state is inferred from an older successful commit. `software_field_test_ready` requires all automated gates to be green for the exact HEAD being promoted.
+
+## Remaining gates that cannot be completed by repository-only automation
+
+### Repository-owner administration
+
+The `main` branch is currently not protected by GitHub branch protection/rulesets. The connected integration can verify this state but cannot write repository administration. Before treating `main` as production history, apply the settings in `GITHUB_PROTECTION.md`.
+
+Because the repository is public, third parties can technically read/clone the source even though the proprietary license grants no permission to reuse it. If the requirement is to prevent source access rather than merely prohibit licensed use, the repository owner must change visibility to private.
+
+### VM acceptance
+
+Install the exact CI/release artifact on a clean Ubuntu Server 24.04 amd64 VM and execute `VM_ACCEPTANCE.md` / `scripts/vm-acceptance.sh`, including reboot persistence, watchdog, failure recovery, upgrade, rollback, negative config tests, resource observation and a 24-hour soak. A 7-day soak is the target before broad production rollout.
+
+### Hardware-in-the-loop
+
+Production claims remain matrix-specific and require real equipment for the claimed path: PUSR/USR/Teltonika or equivalent modem, MikroTik/VPN/4G, RS232/422/485 including multidrop/half-duplex, USB HID/ComAp InteliLite 4 AMF 9, UDP where used, CAN/CAN-FD, power-cycle/reconnect and consumer/Gateway restarts.
+
+For ComAp USB, HIL must confirm actual Linux enumeration, VID/PID/serial, HID report descriptor/report sizes and the application protocol. Do not claim automatic ComAp Direct↔Modbus conversion.
+
+## Merge rule
+
+PR #2 remains draft and must not be merged into `main` merely because code exists. Keep it draft until the exact candidate is green and the owner is ready for the VM/HIL acceptance sequence. Production validation is recorded only for the hardware/network/consumer combinations actually tested.

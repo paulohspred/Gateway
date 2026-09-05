@@ -18,7 +18,11 @@ current="$(readlink -f "$ROOT/current")"
 previous="$(readlink -f "$ROOT/previous")"
 [[ -d "$current" && -d "$previous" && "$current" != "$previous" ]] || { echo "ERRO: release anterior inválida/igual à atual." >&2; exit 2; }
 [[ -x "$previous/bin/rc-gateway" && -f "$previous/MANIFEST" ]] || { echo "ERRO: release anterior incompleta." >&2; exit 2; }
+for legal in LICENSE NOTICE THIRD_PARTY_NOTICES.md; do
+  [[ -f "$previous/$legal" ]] || { echo "ERRO: release anterior sem arquivo legal obrigatório: $legal" >&2; exit 2; }
+done
 grep -qx 'product=rc-gateway' "$previous/MANIFEST" || { echo "ERRO: release anterior não pertence ao produto rc-gateway." >&2; exit 2; }
+grep -qx 'license=Proprietary-All-Rights-Reserved' "$previous/MANIFEST" || { echo "ERRO: release anterior não possui a identidade de licença esperada." >&2; exit 2; }
 "$previous/bin/rc-gateway" --check-config --config "$CONFIG"
 
 ln -sfn "$previous" "$ROOT/current.rollback"

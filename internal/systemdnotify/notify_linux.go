@@ -32,11 +32,15 @@ func FromEnv() *Notifier {
 	if err != nil || usec == 0 {
 		return n
 	}
-	period := time.Duration(usec) * time.Microsecond
-	if period < 2*time.Second {
-		period = 2 * time.Second
+	const maxDurationUsec = uint64((1<<63)-1) / uint64(time.Microsecond)
+	if usec > maxDurationUsec {
+		return n
 	}
+	period := time.Duration(usec) * time.Microsecond
 	n.watchdogInterval = period / 2
+	if n.watchdogInterval <= 0 {
+		n.watchdogInterval = time.Microsecond
+	}
 	return n
 }
 
@@ -47,6 +51,13 @@ func watchdogAppliesToCurrentProcess() bool {
 	}
 	pid, err := strconv.Atoi(raw)
 	return err == nil && pid == os.Getpid()
+}
+
+func notifySocketName(raw string) string {
+	if strings.HasPrefix(raw, "@") {
+		return "\x00" + raw[1:]
+	}
+	return raw
 }
 
 func (n *Notifier) Enabled() bool { return n != nil && n.socket != "" }
@@ -70,7 +81,7 @@ func (n *Notifier) Notify(state string) error {
 	if strings.TrimSpace(state) == "" {
 		return fmt.Errorf("systemd notify state is empty")
 	}
-	addr := &net.UnixAddr{Name: n.socket, Net: "unixgram"}
+	addr := &net.UnixAddr{Name: notifySocketName(n.socket), Net: "unixgram"}
 	conn, err := net.DialUnix("unixgram", nil, addr)
 	if err != nil {
 		return fmt.Errorf("dial NOTIFY_SOCKET: %w", err)
@@ -99,6 +110,7 @@ func (n *Notifier) StartWatchdog(ctx context.Context, onError func(error)) {
 						onError(err)
 					}
 				}
+			}
 		}()
 	})
 }
