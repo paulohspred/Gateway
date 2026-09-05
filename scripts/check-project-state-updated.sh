@@ -10,6 +10,8 @@ fi
 
 if [[ -n "${GITHUB_BASE_REF:-}" ]] && git rev-parse --verify "origin/${GITHUB_BASE_REF}" >/dev/null 2>&1; then
   BASE="origin/${GITHUB_BASE_REF}"
+elif [[ "${GITHUB_REF_NAME:-}" != "main" ]] && git rev-parse --verify origin/main >/dev/null 2>&1; then
+  BASE="origin/main"
 elif git rev-parse --verify HEAD^ >/dev/null 2>&1; then
   BASE="HEAD^"
 else
