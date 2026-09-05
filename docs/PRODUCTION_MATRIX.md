@@ -1,38 +1,53 @@
 # Production Readiness Matrix — RC Universal Gateway
 
-> Estado/handoff canônico: [`PROJECT_STATE.md`](./PROJECT_STATE.md).  
-> Procedimentos: [`RUNBOOK.md`](./RUNBOOK.md).  
-> Compatibilidade: [`COMPATIBILITY_MATRIX.md`](./COMPATIBILITY_MATRIX.md).
+> Estado/handoff canônico: [`PROJECT_STATE.md`](./PROJECT_STATE.md). Procedimentos: [`RUNBOOK.md`](./RUNBOOK.md). Compatibilidade: [`COMPATIBILITY_MATRIX.md`](./COMPATIBILITY_MATRIX.md).
 
-O critério de produção é **qualidade da ponte**, não quantidade de protocolos interpretados.
+O critério de qualidade é a integridade e previsibilidade da ponte, não a quantidade de protocolos interpretados.
 
 ## Core e transportes
 
-| Capacidade | Estado |
+| Capacidade | Estado automatizável |
 |---|---|
-| Tunnel raw duplex | software validated |
-| TCP listen/connect | software validated |
-| listen ↔ listen / connect ↔ listen | sockets reais validados |
+| Tunnel raw duplex | validado por testes |
+| TCP listen/connect | validado por testes |
+| listen ↔ listen / listen ↔ connect | validado por sockets/testes |
 | byte-for-byte bidirecional | validado |
 | pair timeout | validado |
-| slow-peer/write timeout | validado |
+| write timeout / slow peer | validado |
 | half-close drain | validado |
 | RST/queda abrupta | validado |
-| reconnect/churn | 1.000 ciclos no stress gate |
-| escala/concurrency | 1.000 pares duplex simultâneos no stress gate |
-| FD/goroutine leak gate | validado |
+| reconnect/churn | gate de 1.000 ciclos |
+| escala/concurrency | gate de 1.000 pares duplex |
+| FD/goroutine leak | gate automatizado |
 | impairment user-space | validado |
-| mini-soak CI | validado |
-| TLS 1.3/mTLS | software validated |
-| Unix socket | software validated |
-| RS232/422/485 | software validated; HIL físico pendente |
-| UDP | software validated |
-| SocketCAN/CAN-FD | software validated; `vcan` executa quando kernel oferece módulo; HIL físico pendente |
-| métricas/sessões | implementado |
-| CIDR allowlist | implementado |
+| mini-soak | gate automatizado |
+| TLS 1.3/mTLS | testes + configuração fail-closed |
+| Unix socket | validado |
+| RS232/422/485 | software validado; HIL físico pendente |
+| UDP | software validado; sessão por peer limitada |
+| SocketCAN/CAN-FD | software validado; HIL físico pendente |
+| métricas/sessões | implementado/testado |
+| CIDR allowlist | fail-closed para listener não-loopback |
 | TCP keepalive/NODELAY | implementado |
-| race detector | gate CI |
 | Command Plane | bloqueado |
+
+## Segurança e disponibilidade
+
+| Gate | Estado |
+|---|---|
+| admin HTTP loopback-only | obrigatório por configuração |
+| rotas admin GET-only | implementado/testado |
+| timeouts e limite de header HTTP | implementado |
+| scrape de métricas sem manter lock do data plane | teste de regressão |
+| TLS options com TLS desabilitado | rejeitadas |
+| mTLS sem CA | rejeitado |
+| listener TCP/UDP público sem allowlist | rejeitado |
+| IDs que colidem após sanitização de métricas | rejeitados |
+| socket provider canonicalizado | validado |
+| CAN startup removendo arquivo regular | bloqueado/testado |
+| UDP idle cleanup concorrente | revalidação de `lastSeen` |
+| readiness antes de componentes locais iniciarem | bloqueada por barrier de readiness |
+| erro fatal deixando goroutines órfãs | runtime cancela e aguarda shutdown |
 
 ## Configuração
 
@@ -47,60 +62,63 @@ O critério de produção é **qualidade da ponte**, não quantidade de protocol
 | porta serial duplicada | validado |
 | `--check-config` sem abrir transports | validado |
 | `--version` | validado |
-| exemplos `configs/*.json` | validados pelo binário no CI |
+| exemplos `configs/*.json` | gate CI |
+
+## Testes automatizados
+
+O workflow standalone `Gateway CI` executa no mesmo change set:
+
+1. sincronismo do estado canônico;
+2. `gofmt` e `go vet`;
+3. testes unitários/integrados com shuffle e cobertura;
+4. race detector;
+5. build e validação de todas as configurações de exemplo;
+6. 1.000 pares duplex simultâneos;
+7. 1.000 ciclos de churn TCP com leak gate;
+8. impairment + mini-soak;
+9. `govulncheck`;
+10. shell syntax;
+11. testes de archive malicioso do instalador;
+12. build Linux amd64/arm64 reproduzível;
+13. SHA256 e SBOM CycloneDX;
+14. dry-run do instalador contra pacote real;
+15. artifact de release candidate.
+
+As GitHub Actions usadas no workflow são referenciadas por commit SHA, e ferramentas Go de supply chain são pinadas.
 
 ## Release e supply chain
 
-Validado no workflow `Gateway Umbrella`:
-
-- build Linux amd64 e arm64;
-- `-trimpath` e metadados de versão/commit;
-- pacote tar.gz determinístico/reproduzível;
+- build Linux amd64/arm64 com `-trimpath` e metadados;
+- pacote determinístico/reproduzível;
 - SHA256;
 - SBOM CycloneDX;
-- `govulncheck` compatível com Go 1.27.1;
-- dry-run do instalador contra o pacote real;
-- unit systemd standalone;
+- `govulncheck` pinado/compatível com Go 1.27.1;
+- archives aceitam somente diretórios e arquivos regulares, sem links/entradas especiais;
+- uma única raiz de pacote é obrigatória;
+- dry-run valida pacote/config sem modificar host;
 - releases imutáveis com `current`/`previous`;
-- configuração validada antes da troca;
-- health/readiness após restart;
-- rollback automático em falha;
-- rollback manual com health gate;
-- release candidate publicada como artifact do CI.
+- backups de configuração possuem retenção limitada;
+- troca de release é atômica;
+- restart exige readiness;
+- rollback automático em falha e rollback manual com health gate.
 
-## Segurança
+## Critério de promoção automatizável
 
-- `commandPlaneEnabled=true` é rejeitado;
-- CAN TX é bloqueado por padrão;
-- configuração pública deve usar allowlist/firewall/VPN conforme topologia;
-- TLS/mTLS é transporte, não autorização para comandos;
-- admin deve permanecer em rede local/management;
-- nenhuma liberação de escrita industrial nasce do suporte ao transporte.
-
-## Gate final automatizável do produto Gateway
-
-**Software field-test-ready** exige, no mesmo HEAD do Gateway:
-
-1. Canonical project state;
-2. Bridge Core Go;
-3. Stress and leak gate;
-4. Impairment and mini-soak gate;
-5. Release and supply-chain gate;
-6. CI geral sem regressão causada pelo Gateway.
-
-O workflow global `Quality and Security` do monorepo é acompanhado separadamente. Falhas comprovadamente externas a `gateway-umbrella/` — por exemplo auditoria Node do frontend legado — não invalidam a qualificação do produto Gateway, embora ainda possam bloquear merge do PR conforme a política do repositório e devam ser corrigidas no escopo correspondente. O Gateway possui seu próprio vulnerability/supply-chain gate obrigatório e não ignora vulnerabilidades Go alcançáveis.
+**Software field-test-ready** só pode ser declarado quando todos os jobs de `Gateway CI` estiverem verdes no mesmo código/change set. `PROJECT_STATE.md` registra o checkpoint promovido.
 
 ## Gates físicos restantes
 
-Depois dos gates automatizáveis ainda permanecem:
+Mesmo com todos os gates automatizados verdes, permanecem necessários para **production validated**:
 
 - PUSR/USR real;
 - controlador/dispositivo real;
 - VPN/4G/MikroTik real;
-- serial real;
+- RS232/RS422/RS485 reais;
+- UDP físico quando aplicável;
 - CAN/CAN-FD físico;
 - `tc netem`/falhas de rede em HIL;
+- power-cycle/reconnect reais;
 - soak mínimo 24 h, alvo 7 dias;
 - rollback em máquina de homologação.
 
-Esses itens físicos são o que transforma **software field-test-ready** em **production validated**.
+Esses gates físicos não podem ser substituídos por CI.
