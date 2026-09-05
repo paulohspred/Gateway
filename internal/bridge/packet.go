@@ -12,6 +12,23 @@ import (
 
 const maxFramedPacketBytes = 64 * 1024
 
+// copyPacketDuplex bridges two SOCK_SEQPACKET endpoints without converting
+// either side into a byte stream. Every successful Read produces exactly one
+// Write so packet boundaries cannot be split by a generic write-all loop.
+func copyPacketDuplex(ctx context.Context, pairID string, field, consumer net.Conn, hooks Hooks, writeTimeout, drainTimeout time.Duration) error {
+	if drainTimeout <= 0 {
+		drainTimeout = 2 * time.Second
+	}
+	results := make(chan copyResult, 2)
+	go func() {
+		results <- copyResult{"field_to_consumer", copyPacketDirection(pairID, "field_to_consumer", consumer, field, hooks, writeTimeout)}
+	}()
+	go func() {
+		results <- copyResult{"consumer_to_field", copyPacketDirection(pairID, "consumer_to_field", field, consumer, hooks, writeTimeout)}
+	}()
+	return waitPacketCopies(ctx, field, consumer, results, drainTimeout)
+}
+
 // copyPacketFramedDuplex bridges exactly one SOCK_SEQPACKET endpoint to a
 // stream endpoint. Each packet is encoded on the stream as uint32 big-endian
 // payload length followed by the unmodified payload. The reverse direction
@@ -36,7 +53,10 @@ func copyPacketFramedDuplex(ctx context.Context, pairID string, field, consumer 
 			results <- copyResult{"consumer_to_field", copyPacketToStream(pairID, "consumer_to_field", field, consumer, hooks, writeTimeout)}
 		}()
 	}
+	return waitPacketCopies(ctx, field, consumer, results, drainTimeout)
+}
 
+func waitPacketCopies(ctx context.Context, field, consumer net.Conn, results <-chan copyResult, drainTimeout time.Duration) error {
 	var first copyResult
 	select {
 	case <-ctx.Done():
@@ -72,6 +92,34 @@ func copyPacketFramedDuplex(ctx context.Context, pairID string, field, consumer 
 			return second.err
 		default:
 			return nil
+		}
+	}
+}
+
+func copyPacketDirection(pairID, direction string, dst, src net.Conn, hooks Hooks, writeTimeout time.Duration) error {
+	buf := make([]byte, maxFramedPacketBytes)
+	for {
+		n, rerr := readPacket(src, buf)
+		if n > 0 {
+			if writeTimeout > 0 {
+				_ = dst.SetWriteDeadline(time.Now().Add(writeTimeout))
+			}
+			written, werr := dst.Write(buf[:n])
+			if writeTimeout > 0 {
+				_ = dst.SetWriteDeadline(time.Time{})
+			}
+			if written > 0 && hooks.OnBytes != nil {
+				hooks.OnBytes(pairID, direction, uint64(written))
+			}
+			if werr != nil {
+				return normalizeCopyError(werr)
+			}
+			if written != n {
+				return io.ErrShortWrite
+			}
+		}
+		if rerr != nil {
+			return normalizeCopyError(rerr)
 		}
 	}
 }
