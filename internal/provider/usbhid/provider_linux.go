@@ -28,12 +28,17 @@ func Run(ctx context.Context, cfg Config, logger *slog.Logger, hooks Hooks) erro
 	if err != nil {
 		return err
 	}
-	resolvedDevice, identity, err := resolveHIDRawDevice(cfg)
+
+	// Resolve once before readiness so a configured HID that is absent,
+	// ambiguous or unsafe cannot make the daemon look ready. Keep the original
+	// selector in cfg: auto-selected devices are resolved again for each
+	// session, allowing a hotplug/re-enumeration to move from hidrawN to another
+	// hidraw index without changing production configuration.
+	initialDevice, identity, err := resolveHIDRawDevice(cfg)
 	if err != nil {
 		return err
 	}
-	cfg.Device = resolvedDevice
-	if err := validateHIDRawNode(cfg.Device); err != nil {
+	if err := validateHIDRawNode(initialDevice); err != nil {
 		return fmt.Errorf("USB HID provider %s validate device: %w", cfg.ID, err)
 	}
 	if err := os.MkdirAll(filepath.Dir(cfg.Socket), 0o750); err != nil {
@@ -81,7 +86,7 @@ func Run(ctx context.Context, cfg Config, logger *slog.Logger, hooks Hooks) erro
 		if serialNumber == "" {
 			serialNumber = cfg.SerialNumber
 		}
-		logger.Info("USB HID provider ready", "id", cfg.ID, "socket", cfg.Socket, "device", cfg.Device, "vendorId", vendorID, "productId", productID, "serialNumber", serialNumber, "hidName", identity.Name, "maxReportBytes", cfg.MaxReportBytes, "allowWrite", cfg.AllowWrite)
+		logger.Info("USB HID provider ready", "id", cfg.ID, "socket", cfg.Socket, "device", initialDevice, "vendorId", vendorID, "productId", productID, "serialNumber", serialNumber, "hidName", identity.Name, "maxReportBytes", cfg.MaxReportBytes, "allowWrite", cfg.AllowWrite)
 	}
 
 	var seq uint64
@@ -94,11 +99,26 @@ func Run(ctx context.Context, cfg Config, logger *slog.Logger, hooks Hooks) erro
 			return fmt.Errorf("USB HID provider %s accept: %w", cfg.ID, err)
 		}
 
-		device, err := openHIDRaw(cfg)
+		sessionCfg := cfg
+		resolvedDevice, sessionIdentity, err := resolveHIDRawDevice(cfg)
 		if err != nil {
 			_ = conn.Close()
 			if logger != nil {
-				logger.Warn("USB HID device open failed", "provider", cfg.ID, "device", cfg.Device, "error", err)
+				logger.Warn("USB HID device resolution failed", "provider", cfg.ID, "vendorId", cfg.VendorID, "productId", cfg.ProductID, "serialNumber", cfg.SerialNumber, "error", err)
+			}
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-time.After(time.Second):
+				continue
+			}
+		}
+		sessionCfg.Device = resolvedDevice
+		device, err := openHIDRaw(sessionCfg)
+		if err != nil {
+			_ = conn.Close()
+			if logger != nil {
+				logger.Warn("USB HID device open failed", "provider", cfg.ID, "device", sessionCfg.Device, "error", err)
 			}
 			select {
 			case <-ctx.Done():
@@ -114,17 +134,17 @@ func Run(ctx context.Context, cfg Config, logger *slog.Logger, hooks Hooks) erro
 			hooks.OnOpen(sessionID)
 		}
 		if logger != nil {
-			logger.Info("USB HID consumer connected", "provider", cfg.ID, "device", cfg.Device, "socket", cfg.Socket, "allowWrite", cfg.AllowWrite)
+			logger.Info("USB HID consumer connected", "provider", cfg.ID, "device", sessionCfg.Device, "vendorId", sessionIdentity.VendorID, "productId", sessionIdentity.ProductID, "serialNumber", sessionIdentity.SerialNumber, "socket", cfg.Socket, "allowWrite", cfg.AllowWrite)
 		}
 
-		bridgeErr := bridgeReports(ctx, conn, device, cfg, sessionID, hooks)
+		bridgeErr := bridgeReports(ctx, conn, device, sessionCfg, sessionID, hooks)
 		_ = conn.Close()
 		_ = device.Close()
 		if hooks.OnClose != nil {
 			hooks.OnClose(sessionID, bridgeErr)
 		}
 		if logger != nil {
-			logger.Info("USB HID consumer disconnected", "provider", cfg.ID, "error", bridgeErr)
+			logger.Info("USB HID consumer disconnected", "provider", cfg.ID, "device", sessionCfg.Device, "error", bridgeErr)
 		}
 	}
 }
