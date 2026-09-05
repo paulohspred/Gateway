@@ -26,7 +26,12 @@ jobs:
       - name: Canonical project state
         run: bash scripts/check-project-state-updated.sh
       - name: Format
-        run: test -z "$(gofmt -l .)"
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [[ -n "$unformatted" ]]; then
+            printf '%s\n' "$unformatted"
+            exit 1
+          fi
       - name: Vet
         run: go vet ./...
       - name: Unit and integration tests
