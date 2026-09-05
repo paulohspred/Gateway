@@ -1,4 +1,4 @@
-module github.com/paulohspdev-cmyk/ProjetoGerador/gateway-umbrella
+module github.com/paulohspred/Gateway
 
 go 1.27.0
 
