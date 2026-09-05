@@ -2,17 +2,11 @@ name: Gateway CI
 
 on:
   push:
-    branches:
-      - main
   pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
-
-concurrency:
-  group: gateway-ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   quality:
@@ -62,7 +56,7 @@ jobs:
         with:
           go-version: '1.27.1'
           cache: true
-      - name: 1000 duplex pairs and 1000 TCP churn cycles
+      - name: 1000 concurrent pairs and 1000 TCP churn cycles
         env:
           RC_GATEWAY_STRESS: '1'
           RC_GATEWAY_STRESS_PAIRS: '1000'
@@ -80,7 +74,7 @@ jobs:
         with:
           go-version: '1.27.1'
           cache: true
-      - name: Impaired reconnect mini-soak
+      - name: Repeated impaired reconnect soak
         env:
           RC_GATEWAY_SOAK: '1'
           RC_GATEWAY_SOAK_SECONDS: '30'
@@ -91,10 +85,6 @@ jobs:
     needs: soak
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    permissions:
-      contents: read
-      id-token: write
-      attestations: write
     steps:
       - uses: actions/checkout@v6
         with:
@@ -110,7 +100,8 @@ jobs:
           GOBIN="$RUNNER_TEMP/gobin" go install github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@v1.12.0
           echo "$RUNNER_TEMP/gobin" >> "$GITHUB_PATH"
       - name: Vulnerability scan
-        run: "$RUNNER_TEMP/gobin/govulncheck" ./...
+        run: |
+          "$RUNNER_TEMP/gobin/govulncheck" ./...
       - name: Shell syntax
         run: bash -n scripts/*.sh
       - name: Reproducible release build
@@ -141,8 +132,3 @@ jobs:
             dist-a/*.sha256
           if-no-files-found: error
           retention-days: 14
-      - name: Attest release provenance
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/attest-build-provenance@v3
-        with:
-          subject-path: 'dist-a/*.tar.gz'
