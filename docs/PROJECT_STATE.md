@@ -31,9 +31,9 @@ cmd/ internal/ configs/ docs/ scripts/ systemd/ .github/
 
 ## Estado deste ciclo
 
-Este ciclo reorganiza o produto como repositório standalone e aplica hardening de segurança, disponibilidade, testes e release. O novo incremento adiciona transporte USB HID Linux para dispositivos `/dev/hidrawN`, visando também o caminho físico de controladoras como a ComAp InteliLite 4 AMF 9 quando a interface USB for exposta como hidraw.
+Este ciclo reorganiza o produto como repositório standalone e aplica hardening de segurança, disponibilidade, testes e release. O incremento USB HID agora evolui de um caminho fixo `/dev/hidrawN` para identificação estável por VID/PID/serial, validação de tipo de socket e framing explícito ao cruzar transporte packet↔stream.
 
-Enquanto o workflow `Gateway CI` do HEAD não estiver integralmente verde, o estado é **candidate / validation pending**.
+O checkpoint `1262dce7256b3fb6015ea1ccba126d460fe4be7f` teve todos os jobs do `Gateway CI` verdes. Como o runtime mudou depois desse checkpoint, o HEAD atual volta ao estado **candidate / validation pending** até o workflow do mesmo HEAD fechar integralmente verde.
 
 ### Mudanças realizadas
 
@@ -48,17 +48,28 @@ Enquanto o workflow `Gateway CI` do HEAD não estiver integralmente verde, o est
 - listeners TCP/UDP públicos exigem allowlist independentemente do flag legado;
 - caminhos de sockets de providers são canonicalizados antes de comparação;
 - IDs que colidem depois da sanitização de métricas são rejeitados;
+- `LoadStrict` valida e normaliza a mesma fotografia de bytes lida do arquivo, removendo a dupla leitura/TOCTOU de configuração;
 - provider CAN não remove arquivo regular em caminho de socket e valida existência da interface no startup;
 - providers serial/Unix criam diretório de socket com permissões restritas e sockets `0660`;
-- novo provider USB HID Linux aceita somente `/dev/hidrawN`, publica `unixpacket`, preserva reports, rejeita symlink/arquivo não-character-device e mantém escrita desabilitada por padrão;
-- configuração detecta colisão de ID/socket/dispositivo físico envolvendo USB HID;
+- provider USB HID Linux publica `unixpacket`, preserva reports, rejeita symlink/arquivo não-character-device e mantém escrita desabilitada por padrão;
+- USB HID aceita caminho explícito `/dev/hidrawN` ou seletor estável `vendorId` + `productId` + `serialNumber` opcional;
+- seleção HID automática exige exatamente um match em sysfs; ambiguidades falham e exigem serial/caminho explícito;
+- quando caminho e seletor são configurados juntos, a identidade do equipamento é verificada antes do startup;
+- USB HID agora resolve e valida a presença do character device antes de declarar readiness;
+- generic bridge suporta `network: "unixpacket"` para consumir corretamente providers HID/CAN;
+- configuração de produção conhece o tipo real dos provider sockets (`unix` para serial, `unixpacket` para HID/CAN) e rejeita mismatch antes do runtime;
+- mistura de `unixpacket` com TCP/Unix stream é fail-closed sem `packetFraming: "length32be"`;
+- `length32be` codifica cada pacote como comprimento uint32 big-endian + payload sem alteração, com limite de 64 KiB por frame;
+- runtime propaga `packetFraming` e seletores HID até os componentes responsáveis;
+- configuração detecta colisão de ID/socket/dispositivo físico e também seletor HID automático duplicado;
 - runtime inclui USB HID na barrier de readiness e nas métricas/sessões operacionais;
-- script `scripts/probe-usb-hid.sh` lista metadados HID disponíveis via sysfs para HIL;
+- `scripts/probe-usb-hid.sh` agora coleta VID/PID, nome/serial HID, metadados USB pai, interface, report descriptor (tamanho + SHA-256) e permissões;
+- o projeto externo `embyt/hid2tcp` foi usado apenas como referência conceitual; nenhum código GPL foi incorporado;
 - expiração UDP revalida `lastSeen` antes de remover sessão;
 - runtime só marca `/readyz` depois da inicialização local de todos os componentes configurados;
 - erro fatal de componente cancela o runtime interno e aguarda goroutines antes de retornar;
 - allowlist normaliza prefixos e IPv4-mapped peer addresses;
-- testes dedicados cobrem admin HTTP, lifecycle do admin, SessionRegistry, lifecycle/readiness do Gateway, lock de métricas, configuração fail-closed, allowlist, segurança de socket CAN e validação/framing fail-closed do provider USB HID;
+- testes dedicados cobrem admin HTTP, lifecycle do admin, SessionRegistry, lifecycle/readiness do Gateway, lock de métricas, configuração fail-closed, allowlist, segurança de socket CAN, seletores HID, descoberta hidraw, unixpacket e framing packet↔stream;
 - instalador rejeita symlinks, hardlinks e entradas especiais no archive, exige uma única raiz e limita retenção de backups de configuração;
 - CI testa archives maliciosos do instalador;
 - documentação e catálogo foram alinhados ao estado bridge-first atual.
@@ -68,8 +79,13 @@ Enquanto o workflow `Gateway CI` do HEAD não estiver integralmente verde, o est
 - `commandPlaneEnabled=true` é rejeitado;
 - CAN TX permanece `allowTransmit=false` por padrão;
 - USB HID write permanece `allowWrite=false` por padrão;
-- USB HID configurado aceita somente caminho `/dev/hidrawN`;
-- USB HID rejeita symlink e arquivo que não seja character device ao abrir sessão;
+- USB HID requer caminho `/dev/hidrawN` ou seletor VID/PID válido;
+- seletor VID/PID sem serial só é aceito em runtime quando existe exatamente um dispositivo correspondente;
+- caminho HID explícito rejeita symlink e nó que não seja character device;
+- caminho + seletor devem corresponder ao mesmo equipamento;
+- HID configurado precisa estar presente para o provider declarar readiness;
+- provider socket deve ser consumido com o tipo correto (`unix` ou `unixpacket`);
+- transição `unixpacket`↔stream não pode perder fronteiras silenciosamente e exige framing explícito;
 - admin HTTP é loopback-only nesta release;
 - listener TCP/UDP não-loopback sem `allowedCidrs` é inválido;
 - TLS listener exige chave/certificado;
@@ -87,9 +103,11 @@ Enquanto o workflow `Gateway CI` do HEAD não estiver integralmente verde, o est
 - reverse TCP de modem;
 - TCP direto por IP/VPN;
 - TLS 1.3 e mTLS;
-- Unix sockets;
+- Unix stream sockets;
+- Unix `SOCK_SEQPACKET` (`unixpacket`);
 - serial RS232/RS422/RS485 raw;
-- USB HID Linux via `/dev/hidrawN`, preservando reports em `unixpacket`;
+- USB HID Linux via `/dev/hidrawN`, com autodiscovery por VID/PID/serial e reports preservados em `unixpacket`;
+- framing `length32be` opcional e explícito para transição packet↔stream;
 - UDP preservando datagramas e sessões por peer;
 - SocketCAN/CAN-FD preservando frames do ABI Linux;
 - pair timeout, write timeout, half-close drain, keepalive, NODELAY e CIDR allowlist;
@@ -97,20 +115,22 @@ Enquanto o workflow `Gateway CI` do HEAD não estiver integralmente verde, o est
 
 ### Limite específico de USB/ComAp
 
-O provider HID é transporte, não conversor de protocolo. Para a InteliLite 4 AMF 9, ainda é obrigatório HIL para confirmar enumeração Linux, VID/PID, tamanhos/report IDs e o protocolo de aplicação sobre USB. Não declarar Modbus via USB nem compatibilidade com InteliConfig por emulação até existir evidência de bancada/documentação suficiente. O adapter ComAp Direct, se necessário, deve permanecer separado do core bridge-first.
+O provider HID é transporte, não conversor de protocolo. Para a InteliLite 4 AMF 9, ainda é obrigatório HIL para confirmar enumeração Linux, VID/PID, serial, interface, HID report descriptor, tamanhos/report IDs e o protocolo de aplicação sobre USB. Não declarar Modbus via USB nem compatibilidade com InteliConfig por emulação até existir evidência de bancada/documentação suficiente. O adapter ComAp Direct, se necessário, deve permanecer separado do core bridge-first.
+
+O framing `length32be` também não transforma HID em Modbus; ele apenas preserva a fronteira dos reports quando um pacote precisa atravessar um stream TCP/Unix entre componentes compatíveis.
 
 ## Semântica de readiness
 
 `/readyz` só fica verde quando:
 
 - admin HTTP fez bind;
-- cada stream tunnel criou suas sources/listeners;
+- cada stream/packet tunnel criou suas sources/listeners;
 - cada UDP tunnel fez bind e resolveu target;
 - cada serial provider publicou seu socket local;
-- cada USB HID provider publicou seu socket local;
+- cada USB HID provider resolveu o equipamento configurado, validou o character device e publicou seu socket local;
 - cada CAN provider encontrou a interface configurada e publicou seu socket local.
 
-Readiness **não** significa que o equipamento físico respondeu. Serial e USB HID são abertos quando uma sessão efetivamente chega; CAN raw é aberto quando um consumidor conecta. HIL continua obrigatório.
+Readiness **não** significa que a controladora respondeu ao protocolo de aplicação. O HID está presente e validado, mas o handshake ComAp Direct continua sendo responsabilidade do consumidor/adapter e do HIL. Serial é aberto quando uma sessão chega; CAN raw é aberto quando um consumidor conecta.
 
 ## Gates automatizados do novo repositório
 
@@ -154,7 +174,10 @@ As actions de terceiros usam tags de versão principal no workflow atual, com `p
 
 ## Checkpoint standalone atual
 
-**Pendente:** registrar o SHA de código depois que `Gateway CI` ficar integralmente verde com estes gates, incluindo o novo provider USB HID. Não promover documentação para “software field-test-ready” antes disso.
+- último checkpoint integralmente verde antes deste incremento: `1262dce7256b3fb6015ea1ccba126d460fe4be7f`;
+- HEAD atual: **validation pending** até todos os jobs automatizados fecharem verdes novamente;
+- depois dos gates automatizados, o status máximo continua sendo **software field-test-ready**;
+- USB/ComAp só pode avançar para **production validated** após HIL físico.
 
 ## Gates físicos restantes para production validated
 
@@ -163,8 +186,8 @@ As actions de terceiros usam tags de versão principal no workflow atual, com `p
 3. RS232 real;
 4. RS422 real quando aplicável;
 5. RS485 real, incluindo direção/half-duplex do hardware;
-6. USB HID real, incluindo InteliLite 4 AMF 9: enumeração, VID/PID, reports, read/write e reconnect;
-7. adapter ComAp Direct em HIL se o caso USB não expuser Modbus diretamente;
+6. USB HID real, incluindo InteliLite 4 AMF 9: enumeração, VID/PID/serial, descriptor, reports, read/write e reconnect;
+7. adapter ComAp Direct em HIL se o caso USB não expuser protocolo diretamente consumível;
 8. UDP real quando aplicável;
 9. CAN clássico físico;
 10. CAN-FD físico;
