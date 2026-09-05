@@ -28,6 +28,14 @@ func Run(ctx context.Context, cfg Config, logger *slog.Logger, hooks Hooks) erro
 	if err != nil {
 		return err
 	}
+	resolvedDevice, identity, err := resolveHIDRawDevice(cfg)
+	if err != nil {
+		return err
+	}
+	cfg.Device = resolvedDevice
+	if err := validateHIDRawNode(cfg.Device); err != nil {
+		return fmt.Errorf("USB HID provider %s validate device: %w", cfg.ID, err)
+	}
 	if err := os.MkdirAll(filepath.Dir(cfg.Socket), 0o750); err != nil {
 		return fmt.Errorf("USB HID provider %s create socket dir: %w", cfg.ID, err)
 	}
@@ -61,7 +69,19 @@ func Run(ctx context.Context, cfg Config, logger *slog.Logger, hooks Hooks) erro
 	defer close(stop)
 
 	if logger != nil {
-		logger.Info("USB HID provider ready", "id", cfg.ID, "socket", cfg.Socket, "device", cfg.Device, "maxReportBytes", cfg.MaxReportBytes, "allowWrite", cfg.AllowWrite)
+		vendorID := identity.VendorID
+		if vendorID == "" {
+			vendorID = cfg.VendorID
+		}
+		productID := identity.ProductID
+		if productID == "" {
+			productID = cfg.ProductID
+		}
+		serialNumber := identity.SerialNumber
+		if serialNumber == "" {
+			serialNumber = cfg.SerialNumber
+		}
+		logger.Info("USB HID provider ready", "id", cfg.ID, "socket", cfg.Socket, "device", cfg.Device, "vendorId", vendorID, "productId", productID, "serialNumber", serialNumber, "hidName", identity.Name, "maxReportBytes", cfg.MaxReportBytes, "allowWrite", cfg.AllowWrite)
 	}
 
 	var seq uint64
@@ -109,16 +129,23 @@ func Run(ctx context.Context, cfg Config, logger *slog.Logger, hooks Hooks) erro
 	}
 }
 
-func openHIDRaw(cfg Config) (reportDevice, error) {
-	info, err := os.Lstat(cfg.Device)
+func validateHIDRawNode(path string) error {
+	info, err := os.Lstat(path)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if info.Mode()&os.ModeSymlink != 0 {
-		return nil, fmt.Errorf("refusing symlink USB HID device %s", cfg.Device)
+		return fmt.Errorf("refusing symlink USB HID device %s", path)
 	}
 	if info.Mode()&os.ModeCharDevice == 0 {
-		return nil, fmt.Errorf("USB HID device %s is not a character device", cfg.Device)
+		return fmt.Errorf("USB HID device %s is not a character device", path)
+	}
+	return nil
+}
+
+func openHIDRaw(cfg Config) (reportDevice, error) {
+	if err := validateHIDRawNode(cfg.Device); err != nil {
+		return nil, err
 	}
 	flags := os.O_RDONLY
 	if cfg.AllowWrite {
