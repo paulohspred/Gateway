@@ -12,6 +12,16 @@ CHECKSUM="$(realpath "$2")"
 [[ -f "$ARCHIVE" && -f "$CHECKSUM" ]] || { echo "archive/checksum ausente" >&2; exit 2; }
 for cmd in dpkg-deb sha256sum python3; do command -v "$cmd" >/dev/null || { echo "$cmd ausente" >&2; exit 69; }; done
 
+# Contract check for the production hardening learned in VM acceptance:
+# Rapid SCADA upstream listens on 10000/10002 on all interfaces, so the stack
+# installer must provision a persistent nftables gate that allows those ports
+# only through loopback.
+grep -q 'apt_install ca-certificates curl nginx unzip nftables' "$INSTALLER"
+grep -q 'rc-scada-internal-firewall.service' "$INSTALLER"
+grep -q 'ip daddr != 127.0.0.0/8 tcp dport { 10000, 10002 }' "$INSTALLER"
+grep -q 'ip6 daddr != ::1 tcp dport { 10000, 10002 }' "$INSTALLER"
+echo "stack installer Rapid internal-port firewall contract: OK"
+
 tmp="$(mktemp -d)"
 cleanup(){ rm -rf "$tmp"; }
 trap cleanup EXIT
