@@ -62,6 +62,14 @@ type SerialProvider struct {
 	DTR           bool   `json:"dtr,omitempty"`
 }
 
+type USBHIDProvider struct {
+	ID             string `json:"id"`
+	Socket         string `json:"socket"`
+	Device         string `json:"device"`
+	MaxReportBytes int    `json:"maxReportBytes,omitempty"`
+	AllowWrite     bool   `json:"allowWrite,omitempty"`
+}
+
 type CANProvider struct {
 	ID            string `json:"id"`
 	Interface     string `json:"interface"`
@@ -88,14 +96,15 @@ type UDPTunnel struct {
 }
 
 type Config struct {
-	Schema          int              `json:"schema"`
-	NodeID          string           `json:"nodeId"`
-	Admin           Admin            `json:"admin"`
-	Security        Security         `json:"security"`
-	SerialProviders []SerialProvider `json:"serialProviders,omitempty"`
-	CANProviders    []CANProvider    `json:"canProviders,omitempty"`
-	Tunnels         []Tunnel         `json:"tunnels"`
-	UDPTunnels      []UDPTunnel      `json:"udpTunnels,omitempty"`
+	Schema           int              `json:"schema"`
+	NodeID           string           `json:"nodeId"`
+	Admin            Admin            `json:"admin"`
+	Security         Security         `json:"security"`
+	SerialProviders  []SerialProvider `json:"serialProviders,omitempty"`
+	USBHIDProviders  []USBHIDProvider `json:"usbHidProviders,omitempty"`
+	CANProviders     []CANProvider    `json:"canProviders,omitempty"`
+	Tunnels          []Tunnel         `json:"tunnels"`
+	UDPTunnels       []UDPTunnel      `json:"udpTunnels,omitempty"`
 }
 
 func Load(path string) (Config, error) {
@@ -258,6 +267,33 @@ func validateProviders(cfg *Config) error {
 		}
 		if p.ReadTimeoutMS < 0 || p.ReadTimeoutMS > 60000 {
 			return fmt.Errorf("serialProvider %s invalid readTimeoutMilliseconds", p.ID)
+		}
+	}
+
+	for i := range cfg.USBHIDProviders {
+		p := &cfg.USBHIDProviders[i]
+		p.ID = strings.TrimSpace(p.ID)
+		p.Socket = strings.TrimSpace(p.Socket)
+		p.Device = strings.TrimSpace(p.Device)
+		if p.ID == "" {
+			return fmt.Errorf("usbHidProvider[%d] requires id", i)
+		}
+		if !filepath.IsAbs(p.Socket) {
+			return fmt.Errorf("usbHidProvider %s requires absolute socket", p.ID)
+		}
+		p.Socket = filepath.Clean(p.Socket)
+		p.Device = filepath.Clean(p.Device)
+		if !isHIDRawDevicePath(p.Device) {
+			return fmt.Errorf("usbHidProvider %s device must be /dev/hidrawN", p.ID)
+		}
+		if p.MaxReportBytes <= 0 {
+			p.MaxReportBytes = 4096
+		}
+		if p.MaxReportBytes > 16384 {
+			return fmt.Errorf("usbHidProvider %s maxReportBytes must be 1..16384", p.ID)
+		}
+		if err := claim("usbHidProvider", p.ID, p.Socket); err != nil {
+			return err
 		}
 	}
 
@@ -448,4 +484,22 @@ func isLoopbackBind(bind string) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
+}
+
+func isHIDRawDevicePath(path string) bool {
+	path = filepath.Clean(strings.TrimSpace(path))
+	if filepath.Dir(path) != "/dev" {
+		return false
+	}
+	base := filepath.Base(path)
+	const prefix = "hidraw"
+	if !strings.HasPrefix(base, prefix) || len(base) == len(prefix) {
+		return false
+	}
+	for _, r := range base[len(prefix):] {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }

@@ -66,7 +66,7 @@ func validateProductionConflicts(cfg *Config) error {
 		return nil
 	}
 
-	serialDevices := map[string]string{}
+	physicalDevices := map[string]string{}
 	providerSockets := map[string]string{}
 	unixListeners := map[string]string{}
 	claimProviderSocket := func(label, socket string) error {
@@ -78,20 +78,38 @@ func validateProductionConflicts(cfg *Config) error {
 		unixListeners[socket] = label
 		return nil
 	}
+	claimPhysicalDevice := func(label, kind, device string) error {
+		device = filepath.Clean(strings.TrimSpace(device))
+		if !filepath.IsAbs(device) {
+			return fmt.Errorf("%s requires absolute device path", label)
+		}
+		if prev, exists := physicalDevices[device]; exists {
+			return fmt.Errorf("%s device %q is already used by %s", kind, device, prev)
+		}
+		physicalDevices[device] = label
+		return nil
+	}
 
 	for _, p := range cfg.SerialProviders {
 		label := "serialProvider " + p.ID
 		if err := claimID(label, p.ID); err != nil {
 			return err
 		}
-		device := filepath.Clean(strings.TrimSpace(p.Device))
-		if !filepath.IsAbs(device) {
-			return fmt.Errorf("serialProvider %s requires absolute device path", p.ID)
+		if err := claimPhysicalDevice(label, "serial", p.Device); err != nil {
+			return err
 		}
-		if prev, exists := serialDevices[device]; exists {
-			return fmt.Errorf("serial device %q is already used by %s", device, prev)
+		if err := claimProviderSocket(label, p.Socket); err != nil {
+			return err
 		}
-		serialDevices[device] = label
+	}
+	for _, p := range cfg.USBHIDProviders {
+		label := "usbHidProvider " + p.ID
+		if err := claimID(label, p.ID); err != nil {
+			return err
+		}
+		if err := claimPhysicalDevice(label, "USB HID", p.Device); err != nil {
+			return err
+		}
 		if err := claimProviderSocket(label, p.Socket); err != nil {
 			return err
 		}

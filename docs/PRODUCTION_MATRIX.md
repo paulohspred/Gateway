@@ -24,6 +24,7 @@ O critério de qualidade é a integridade e previsibilidade da ponte, não a qua
 | TLS 1.3/mTLS | testes + configuração fail-closed |
 | Unix socket | validado |
 | RS232/422/485 | software validado; HIL físico pendente |
+| USB HID `/dev/hidrawN` | transporte + framing/safety testados; HIL físico pendente |
 | UDP | software validado; sessão por peer limitada |
 | SocketCAN/CAN-FD | software validado; HIL físico pendente |
 | métricas/sessões | implementado/testado |
@@ -45,6 +46,9 @@ O critério de qualidade é a integridade e previsibilidade da ponte, não a qua
 | IDs que colidem após sanitização de métricas | rejeitados |
 | socket provider canonicalizado | validado |
 | CAN startup removendo arquivo regular | bloqueado/testado |
+| USB HID fora de `/dev/hidrawN` | rejeitado |
+| USB HID symlink/non-character-device no runtime | rejeitado |
+| USB HID write sem opt-in | bloqueado/testado |
 | UDP idle cleanup concorrente | revalidação de `lastSeen` |
 | readiness antes de componentes locais iniciarem | bloqueada por barrier de readiness |
 | erro fatal deixando goroutines órfãs | runtime cancela e aguarda shutdown |
@@ -60,6 +64,7 @@ O critério de qualidade é a integridade e previsibilidade da ponte, não a qua
 | colisão UDP bind | validado |
 | colisão Unix/provider | validado |
 | porta serial duplicada | validado |
+| dispositivo físico serial/USB duplicado | validado |
 | `--check-config` sem abrir transports | validado |
 | `--version` | validado |
 | exemplos `configs/*.json` | gate CI |
@@ -84,7 +89,7 @@ O workflow standalone `Gateway CI` executa no mesmo change set:
 14. dry-run do instalador contra pacote real;
 15. artifact de release candidate.
 
-As GitHub Actions usadas no workflow são referenciadas por commit SHA, e ferramentas Go de supply chain são pinadas.
+As actions de terceiros usam tags de versão principal no workflow atual, com checkout sem persistência de credenciais. Ferramentas Go de supply chain permanecem pinadas. Pinagem das actions por commit SHA é melhoria pendente de revalidação do workflow.
 
 ## Release e supply chain
 
@@ -114,6 +119,8 @@ Mesmo com todos os gates automatizados verdes, permanecem necessários para **pr
 - controlador/dispositivo real;
 - VPN/4G/MikroTik real;
 - RS232/RS422/RS485 reais;
+- USB HID real, incluindo enumeração/VID/PID/report IDs e reconexão;
+- InteliLite 4 AMF 9 real para determinar o protocolo de aplicação sobre USB e necessidade de adapter ComAp Direct;
 - UDP físico quando aplicável;
 - CAN/CAN-FD físico;
 - `tc netem`/falhas de rede em HIL;

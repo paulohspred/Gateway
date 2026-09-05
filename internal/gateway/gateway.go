@@ -16,6 +16,7 @@ import (
 	"github.com/paulohspred/Gateway/internal/metrics"
 	"github.com/paulohspred/Gateway/internal/provider/canbridge"
 	"github.com/paulohspred/Gateway/internal/provider/serialbridge"
+	"github.com/paulohspred/Gateway/internal/provider/usbhid"
 )
 
 type Gateway struct {
@@ -27,6 +28,7 @@ type Gateway struct {
 	pairActive atomic.Int64
 	udpActive  atomic.Int64
 	canActive  atomic.Int64
+	hidActive  atomic.Int64
 }
 
 func New(cfg config.Config, logger *slog.Logger) *Gateway {
@@ -41,7 +43,7 @@ func (g *Gateway) Run(ctx context.Context) error {
 	defer cancel()
 
 	var wg sync.WaitGroup
-	componentCount := 1 + len(g.cfg.Tunnels) + len(g.cfg.SerialProviders) + len(g.cfg.CANProviders) + len(g.cfg.UDPTunnels)
+	componentCount := 1 + len(g.cfg.Tunnels) + len(g.cfg.SerialProviders) + len(g.cfg.USBHIDProviders) + len(g.cfg.CANProviders) + len(g.cfg.UDPTunnels)
 	errCh := make(chan error, componentCount)
 	readyCh := make(chan string, componentCount)
 
@@ -50,6 +52,7 @@ func (g *Gateway) Run(ctx context.Context) error {
 	g.metrics.Set("rc_gateway_configured_tunnels", int64(len(g.cfg.Tunnels)))
 	g.metrics.Set("rc_gateway_configured_udp_tunnels", int64(len(g.cfg.UDPTunnels)))
 	g.metrics.Set("rc_gateway_configured_serial_providers", int64(len(g.cfg.SerialProviders)))
+	g.metrics.Set("rc_gateway_configured_usb_hid_providers", int64(len(g.cfg.USBHIDProviders)))
 	g.metrics.Set("rc_gateway_configured_can_providers", int64(len(g.cfg.CANProviders)))
 
 	g.admin.OnListening = func() { readyCh <- "admin" }
@@ -70,6 +73,20 @@ func (g *Gateway) Run(ctx context.Context) error {
 			hooks := serialbridge.Hooks{OnReady: func(string) { readyCh <- "serial:" + p.ID }}
 			if err := serialbridge.Run(runCtx, cfg, g.logger, hooks); err != nil && runCtx.Err() == nil {
 				sendErr(errCh, fmt.Errorf("serial provider %s: %w", p.ID, err))
+			}
+		}()
+	}
+
+	for _, p := range g.cfg.USBHIDProviders {
+		p := p
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			cfg := usbhid.Config{ID: p.ID, Socket: p.Socket, Device: p.Device, MaxReportBytes: p.MaxReportBytes, AllowWrite: p.AllowWrite}
+			hooks := g.hidHooks(p.ID, p.Device)
+			hooks.OnReady = func(string) { readyCh <- "usb-hid:" + p.ID }
+			if err := usbhid.Run(runCtx, cfg, g.logger, hooks); err != nil && runCtx.Err() == nil {
+				sendErr(errCh, fmt.Errorf("USB HID provider %s: %w", p.ID, err))
 			}
 		}()
 	}
@@ -150,7 +167,7 @@ func (g *Gateway) Run(ctx context.Context) error {
 
 	g.admin.SetReady(true)
 	g.metrics.Set("rc_gateway_ready", 1)
-	g.logger.Info("bridge runtime ready", "nodeId", g.cfg.NodeID, "tunnels", len(g.cfg.Tunnels), "udpTunnels", len(g.cfg.UDPTunnels), "serialProviders", len(g.cfg.SerialProviders), "canProviders", len(g.cfg.CANProviders))
+	g.logger.Info("bridge runtime ready", "nodeId", g.cfg.NodeID, "tunnels", len(g.cfg.Tunnels), "udpTunnels", len(g.cfg.UDPTunnels), "serialProviders", len(g.cfg.SerialProviders), "usbHidProviders", len(g.cfg.USBHIDProviders), "canProviders", len(g.cfg.CANProviders))
 
 	select {
 	case <-ctx.Done():
@@ -248,6 +265,41 @@ func (g *Gateway) udpHooks(tunnelID string) datagram.Hooks {
 			g.metrics.Inc("rc_gateway_udp_drops_total")
 			g.metrics.Inc(prefix + "_drops_total")
 			g.metrics.Inc(prefix + "_drops_" + reason + "_total")
+		},
+	}
+}
+
+func (g *Gateway) hidHooks(providerID, device string) usbhid.Hooks {
+	prefix := "rc_gateway_usb_hid_provider_" + providerID
+	return usbhid.Hooks{
+		OnOpen: func(sessionID string) {
+			now := time.Now().UTC()
+			g.sessions.Open(core.Session{ID: sessionID, ListenerID: providerID, Transport: "usb_hid", RemoteAddr: device, LocalAddr: "unixpacket", OpenedAt: now, LastSeenAt: now})
+			g.metrics.Inc("rc_gateway_usb_hid_sessions_opened_total")
+			g.metrics.Inc(prefix + "_sessions_opened_total")
+			g.metrics.Set("rc_gateway_usb_hid_active_sessions", g.hidActive.Add(1))
+			g.metrics.Set("rc_gateway_active_sessions", int64(g.sessions.Count()))
+			g.metrics.Set(prefix+"_active", 1)
+		},
+		OnReport: func(sessionID, direction string, n uint64) {
+			g.sessions.Touch(sessionID, direction, int(n), time.Now().UTC())
+			g.metrics.Inc("rc_gateway_usb_hid_reports_total")
+			g.metrics.Inc(prefix + "_reports_total")
+			g.metrics.Add("rc_gateway_usb_hid_bytes_total", n)
+			g.metrics.Add(prefix+"_bytes_total", n)
+			g.metrics.Add(prefix+"_"+direction+"_bytes_total", n)
+		},
+		OnClose: func(sessionID string, err error) {
+			g.sessions.Close(sessionID)
+			g.metrics.Inc("rc_gateway_usb_hid_sessions_closed_total")
+			g.metrics.Inc(prefix + "_sessions_closed_total")
+			g.metrics.Set("rc_gateway_usb_hid_active_sessions", g.hidActive.Add(-1))
+			g.metrics.Set("rc_gateway_active_sessions", int64(g.sessions.Count()))
+			g.metrics.Set(prefix+"_active", 0)
+			if err != nil {
+				g.metrics.Inc("rc_gateway_usb_hid_errors_total")
+				g.metrics.Inc(prefix + "_errors_total")
+			}
 		},
 	}
 }

@@ -16,7 +16,7 @@ NO TELEMETRY HISTORIAN
 ```text
 Controladora / PLC / RTU / IED
    |
-RS232 / RS422 / RS485 / Ethernet / CAN / UDP
+RS232 / RS422 / RS485 / Ethernet / USB HID / CAN / UDP
    |
 modem / VPN / rede local
    |
@@ -44,9 +44,12 @@ Cada túnel possui `field` e `consumer`. Em `listen ↔ connect`, o peer inbound
 
 UDP preserva a fronteira de cada datagrama, mantém sessão isolada por peer, aplica idle timeout, allowlist e limites explícitos de sessões/tamanho.
 
-### Frame
+### Frame / report
 
-SocketCAN/CAN-FD preserva frames do ABI Linux. J1939/CANopen permanecem responsabilidade do consumidor. Transmissão CAN é **bloqueada por padrão** (`allowTransmit=false`).
+- SocketCAN/CAN-FD preserva frames do ABI Linux. J1939/CANopen permanecem responsabilidade do consumidor. Transmissão CAN é **bloqueada por padrão** (`allowTransmit=false`).
+- USB HID Linux via `/dev/hidrawN` preserva cada report em um socket Unix `unixpacket`. Escrita no dispositivo é **bloqueada por padrão** (`allowWrite=false`).
+
+O provider USB HID é uma camada de transporte. Ele não converte automaticamente o protocolo proprietário ComAp Direct para Modbus. Para uma InteliLite 4 AMF 9 conectada por USB, o caminho físico/hidraw deve ser confirmado em HIL e o protocolo de aplicação precisa de adapter próprio caso o consumidor não fale ComAp Direct. Consulte [`docs/USB_HID_COMAP.md`](./docs/USB_HID_COMAP.md).
 
 ## Segurança por padrão
 
@@ -56,7 +59,9 @@ SocketCAN/CAN-FD preserva frames do ABI Linux. J1939/CANopen permanecem responsa
 - opções TLS são rejeitadas se `tls.enabled=false`;
 - TLS listener exige chave/certificado e mTLS exige CA;
 - CAN TX permanece desabilitado por padrão;
+- USB HID write permanece desabilitado por padrão;
 - caminhos de sockets Unix são normalizados e arquivos comuns nunca são removidos como se fossem sockets stale;
+- USB HID aceita somente caminhos `/dev/hidrawN` e valida character device no momento da sessão;
 - release archives rejeitam symlinks, hardlinks e entradas especiais;
 - firewall/VPN continuam fazendo parte do plano de rede OT.
 
@@ -75,11 +80,11 @@ Admin padrão: `127.0.0.1:18080`.
 │   ├── datagram/               # UDP por peer
 │   ├── gateway/                # orquestração do runtime
 │   ├── metrics/                # métricas operacionais
-│   ├── provider/               # serial e SocketCAN
+│   ├── provider/               # serial, USB HID e SocketCAN
 │   └── transport/netutil/      # allowlists de rede
 ├── configs/                    # exemplos validados pelo CI
 ├── docs/                       # arquitetura, runbook e matrizes
-├── scripts/                    # CI local, release, install e rollback
+├── scripts/                    # CI local, probes, release, install e rollback
 ├── systemd/                    # unit endurecida
 ├── .github/workflows/ci.yml    # gates automatizados
 ├── go.mod
@@ -104,6 +109,12 @@ Ou execute o gate local completo:
 bash scripts/ci.sh
 ```
 
+Para listar dispositivos HID expostos pelo Linux:
+
+```bash
+bash scripts/probe-usb-hid.sh
+```
+
 ## CI e gates
 
 O GitHub Actions executa, em sequência:
@@ -120,7 +131,7 @@ O GitHub Actions executa, em sequência:
 10. SBOM CycloneDX;
 11. SHA256, dry-run do instalador e artifact de release.
 
-As GitHub Actions usadas no workflow são fixadas por commit SHA. `/readyz` só fica verde depois que todos os componentes configurados inicializam sua camada local de runtime. Isso não substitui HIL físico: serial/CAN/dispositivo remoto ainda precisam de homologação real.
+As actions de terceiros usam tags de versão principal no workflow atual, com `persist-credentials: false` no checkout. As ferramentas Go de supply chain possuem versões/commits fixados. `/readyz` só fica verde depois que todos os componentes configurados inicializam sua camada local de runtime. Isso não substitui HIL físico: serial/CAN/USB HID/dispositivo remoto ainda precisam de homologação real.
 
 ## Release standalone
 
@@ -170,5 +181,6 @@ O instalador valida integridade, estrutura e configuração antes da troca atôm
 - [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) — arquitetura;
 - [`docs/PRODUCTION_MATRIX.md`](./docs/PRODUCTION_MATRIX.md) — gates de produção;
 - [`docs/COMPATIBILITY_MATRIX.md`](./docs/COMPATIBILITY_MATRIX.md) — transportes/protocolos e limites;
+- [`docs/USB_HID_COMAP.md`](./docs/USB_HID_COMAP.md) — provider HID e plano de HIL/adapter ComAp;
 - [`docs/RUNBOOK.md`](./docs/RUNBOOK.md) — instalação, operação, diagnóstico, rollback e HIL;
 - [`docs/PLUGIN_CONTRACT.md`](./docs/PLUGIN_CONTRACT.md) — contrato de providers.

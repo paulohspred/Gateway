@@ -12,6 +12,7 @@
 | RS232 | field-test-ready quando CI final verde | bytes raw | porta/adaptador real |
 | RS422 | field-test-ready quando CI final verde | bytes raw | porta/adaptador real |
 | RS485 | field-test-ready quando CI final verde | bytes raw | half-duplex/direção do hardware |
+| USB HID `/dev/hidrawN` | transport implemented; CI cobre framing/segurança | preserva reports em `unixpacket`; write opt-in | dispositivo HID real + VID/PID/reports + adapter de aplicação quando necessário |
 | UDP | field-test-ready quando CI final verde | preserva datagramas e sessão por peer | dispositivo UDP real |
 | SocketCAN clássico | field-test-ready em software | preserva ABI/frame | interface/transceiver físico |
 | CAN-FD | field-test-ready em software | preserva ABI/frame FD | interface/transceiver FD físico |
@@ -33,6 +34,14 @@ Quando o protocolo já é transportado pelo meio acima, o Gateway pode atuar com
 | protocolo TCP proprietário | TCP/TLS | byte-transparent |
 | IEC-101 / DNP3 serial / NMEA | Serial | byte-transparent |
 | J1939 / CANopen | SocketCAN/CAN-FD | Gateway preserva frames; consumidor interpreta PGN/PDO |
+| USB HID genérico | `/dev/hidrawN` | Gateway preserva reports; consumidor interpreta protocolo HID/aplicação |
+| ComAp Direct por USB | USB HID quando a controladora enumerar como hidraw | transporte implementado; adapter semântico não é prometido até HIL/documentação suficiente |
+
+## InteliLite 4 AMF 9 por USB
+
+O caminho USB está preparado no runtime para dispositivos Linux `hidraw`. Para a InteliLite 4 AMF 9, a combinação precisa ser confirmada em bancada porque o fato de existir um conector USB A↔B não garante por si só qual driver/interface o Linux expõe nem que Modbus esteja disponível diretamente nessa USB.
+
+O status correto antes do HIL é: **USB HID transport implemented / ComAp application adapter pending HIL**.
 
 ## O que não é uma promessa do core
 
@@ -44,6 +53,7 @@ Quando o protocolo já é transportado pelo meio acima, o Gateway pode atuar com
 - broker MQTT;
 - servidor OPC UA;
 - interpretação J1939/CANopen;
+- conversão automática ComAp Direct ↔ Modbus;
 - Command Plane industrial.
 
 ## Rede/VPN
