@@ -189,6 +189,7 @@ func validateProductionConflicts(cfg *Config) error {
 			if err := claimUDP("udp tunnel "+t.ID+" consumer", t.Consumer.Bind); err != nil {
 				return err
 			}
+		}
 	}
 	return nil
 }
