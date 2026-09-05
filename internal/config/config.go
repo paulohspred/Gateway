@@ -122,6 +122,9 @@ func Load(path string) (Config, error) {
 	if _, _, err := net.SplitHostPort(cfg.Admin.Bind); err != nil {
 		return cfg, fmt.Errorf("admin invalid bind: %w", err)
 	}
+	if !isLoopbackBind(cfg.Admin.Bind) {
+		return cfg, fmt.Errorf("admin bind must be loopback in this release; use VPN/SSH forwarding for remote management")
+	}
 	if cfg.Security.CommandPlaneEnabled {
 		return cfg, fmt.Errorf("commandPlaneEnabled is intentionally unsupported in this release")
 	}
@@ -214,6 +217,7 @@ func validateProviders(cfg *Config) error {
 		p := &cfg.SerialProviders[i]
 		p.ID = strings.TrimSpace(p.ID)
 		p.Socket = strings.TrimSpace(p.Socket)
+		p.Device = strings.TrimSpace(p.Device)
 		p.Standard = strings.ToLower(strings.TrimSpace(p.Standard))
 		p.Parity = strings.ToLower(strings.TrimSpace(p.Parity))
 		p.StopBits = strings.TrimSpace(p.StopBits)
@@ -223,11 +227,16 @@ func validateProviders(cfg *Config) error {
 		if !filepath.IsAbs(p.Socket) {
 			return fmt.Errorf("serialProvider %s requires absolute socket", p.ID)
 		}
+		p.Socket = filepath.Clean(p.Socket)
+		if p.Device == "" {
+			return fmt.Errorf("serialProvider %s device is required", p.ID)
+		}
+		if !filepath.IsAbs(p.Device) {
+			return fmt.Errorf("serialProvider %s requires absolute device path", p.ID)
+		}
+		p.Device = filepath.Clean(p.Device)
 		if err := claim("serialProvider", p.ID, p.Socket); err != nil {
 			return err
-		}
-		if strings.TrimSpace(p.Device) == "" {
-			return fmt.Errorf("serialProvider %s device is required", p.ID)
 		}
 		if p.Standard != "rs232" && p.Standard != "rs422" && p.Standard != "rs485" {
 			return fmt.Errorf("serialProvider %s invalid standard %q", p.ID, p.Standard)
@@ -266,6 +275,7 @@ func validateProviders(cfg *Config) error {
 		if !filepath.IsAbs(p.Socket) {
 			return fmt.Errorf("canProvider %s requires absolute socket", p.ID)
 		}
+		p.Socket = filepath.Clean(p.Socket)
 		if err := claim("canProvider", p.ID, p.Socket); err != nil {
 			return err
 		}
@@ -283,8 +293,8 @@ func validateEndpoint(ep *Endpoint, label string, requireAllowlist bool) error {
 	case "tcp":
 		return validateTCPEndpoint(ep, label, requireAllowlist)
 	case "unix":
-		if ep.TLS.Enabled {
-			return fmt.Errorf("%s TLS is not valid for unix endpoint", label)
+		if tlsOptionsConfigured(ep.TLS) {
+			return fmt.Errorf("%s TLS options are not valid for unix endpoint", label)
 		}
 		if len(ep.AllowedCIDRs) > 0 {
 			return fmt.Errorf("%s allowedCidrs is not valid for unix endpoint", label)
@@ -306,8 +316,14 @@ func validateEndpoint(ep *Endpoint, label string, requireAllowlist bool) error {
 }
 
 func validateTCPEndpoint(ep *Endpoint, label string, requireAllowlist bool) error {
+	if !ep.TLS.Enabled && tlsOptionsConfigured(ep.TLS) {
+		return fmt.Errorf("%s TLS options require tls.enabled=true", label)
+	}
 	if ep.KeepAliveS <= 0 {
 		ep.KeepAliveS = 30
+	}
+	if ep.KeepAliveS > 3600 {
+		return fmt.Errorf("%s keepAliveSeconds exceeds safe limit", label)
 	}
 	switch ep.Mode {
 	case "listen":
@@ -322,8 +338,14 @@ func validateTCPEndpoint(ep *Endpoint, label string, requireAllowlist bool) erro
 				return fmt.Errorf("%s invalid allowedCidrs entry %q: %w", label, cidr, err)
 			}
 		}
-		if requireAllowlist && len(ep.AllowedCIDRs) == 0 && !isLoopbackBind(ep.Bind) {
-			return fmt.Errorf("%s requires allowedCidrs by security policy", label)
+		if len(ep.AllowedCIDRs) == 0 && !isLoopbackBind(ep.Bind) {
+			if requireAllowlist {
+				return fmt.Errorf("%s requires allowedCidrs by security policy", label)
+			}
+			return fmt.Errorf("%s public listener requires allowedCidrs (fail-closed policy)", label)
+		}
+		if ep.TLS.Enabled && strings.TrimSpace(ep.TLS.ServerName) != "" {
+			return fmt.Errorf("%s TLS listener must not set serverName", label)
 		}
 		if ep.TLS.Enabled && (strings.TrimSpace(ep.TLS.CertFile) == "" || strings.TrimSpace(ep.TLS.KeyFile) == "") {
 			return fmt.Errorf("%s TLS listener requires certFile/keyFile", label)
@@ -344,6 +366,12 @@ func validateTCPEndpoint(ep *Endpoint, label string, requireAllowlist bool) erro
 		if ep.ReconnectS <= 0 {
 			ep.ReconnectS = 5
 		}
+		if ep.DialTimeoutS > 3600 || ep.ReconnectS > 3600 {
+			return fmt.Errorf("%s dial/reconnect timeout exceeds safe limit", label)
+		}
+		if ep.TLS.Enabled && ep.TLS.RequireClientCert {
+			return fmt.Errorf("%s requireClientCert only applies to TLS listeners", label)
+		}
 		if (ep.TLS.CertFile == "") != (ep.TLS.KeyFile == "") {
 			return fmt.Errorf("%s TLS certFile/keyFile must be configured together", label)
 		}
@@ -351,6 +379,10 @@ func validateTCPEndpoint(ep *Endpoint, label string, requireAllowlist bool) erro
 		return fmt.Errorf("%s mode must be listen or connect", label)
 	}
 	return nil
+}
+
+func tlsOptionsConfigured(t TLS) bool {
+	return t.Enabled || t.RequireClientCert || strings.TrimSpace(t.CAFile) != "" || strings.TrimSpace(t.CertFile) != "" || strings.TrimSpace(t.KeyFile) != "" || strings.TrimSpace(t.ServerName) != ""
 }
 
 func validateUDPTunnel(t *UDPTunnel, requireAllowlist bool) error {
@@ -384,8 +416,11 @@ func validateUDPEndpoint(ep *UDPEndpoint, label string, requireAllowlist bool) e
 				return fmt.Errorf("%s invalid allowedCidrs entry %q: %w", label, cidr, err)
 			}
 		}
-		if requireAllowlist && len(ep.AllowedCIDRs) == 0 && !isLoopbackBind(ep.Bind) {
-			return fmt.Errorf("%s requires allowedCidrs by security policy", label)
+		if len(ep.AllowedCIDRs) == 0 && !isLoopbackBind(ep.Bind) {
+			if requireAllowlist {
+				return fmt.Errorf("%s requires allowedCidrs by security policy", label)
+			}
+			return fmt.Errorf("%s public UDP listener requires allowedCidrs (fail-closed policy)", label)
 		}
 	case "connect":
 		if strings.TrimSpace(ep.Address) == "" {
@@ -408,7 +443,7 @@ func isLoopbackBind(bind string) bool {
 	if err != nil {
 		return false
 	}
-	if host == "localhost" {
+	if strings.EqualFold(host, "localhost") {
 		return true
 	}
 	ip := net.ParseIP(host)
