@@ -17,6 +17,7 @@ type Registry struct {
 func New() *Registry {
 	return &Registry{counters: make(map[string]uint64), gauges: make(map[string]int64)}
 }
+
 func sanitize(name string) string {
 	var b strings.Builder
 	for _, r := range name {
@@ -28,39 +29,56 @@ func sanitize(name string) string {
 	}
 	return b.String()
 }
+
 func (r *Registry) Inc(name string) { r.Add(name, 1) }
+
 func (r *Registry) Add(name string, n uint64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.counters[sanitize(name)] += n
 }
+
 func (r *Registry) Set(name string, value int64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.gauges[sanitize(name)] = value
 }
+
+// WritePrometheus snapshots the registry before writing. HTTP clients are
+// external/slow I/O and must never hold the registry lock used by the data
+// plane hooks while a response is being transmitted.
 func (r *Registry) WritePrometheus(w io.Writer) {
 	r.mu.RLock()
-	defer r.mu.RUnlock()
-	names := make([]string, 0, len(r.counters)+len(r.gauges))
-	for n := range r.counters {
-		names = append(names, n)
+	counters := make(map[string]uint64, len(r.counters))
+	gauges := make(map[string]int64, len(r.gauges))
+	for name, value := range r.counters {
+		counters[name] = value
 	}
-	for n := range r.gauges {
-		names = append(names, n)
+	for name, value := range r.gauges {
+		gauges[name] = value
+	}
+	r.mu.RUnlock()
+
+	names := make([]string, 0, len(counters)+len(gauges))
+	for name := range counters {
+		names = append(names, name)
+	}
+	for name := range gauges {
+		names = append(names, name)
 	}
 	sort.Strings(names)
-	seen := map[string]bool{}
-	for _, n := range names {
-		if seen[n] {
+
+	seen := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		if _, exists := seen[name]; exists {
 			continue
 		}
-		seen[n] = true
-		if v, ok := r.counters[n]; ok {
-			fmt.Fprintf(w, "%s %d\n", n, v)
+		seen[name] = struct{}{}
+		if value, ok := counters[name]; ok {
+			_, _ = fmt.Fprintf(w, "%s %d\n", name, value)
 		}
-		if v, ok := r.gauges[n]; ok {
-			fmt.Fprintf(w, "%s %d\n", n, v)
+		if value, ok := gauges[name]; ok {
+			_, _ = fmt.Fprintf(w, "%s %d\n", name, value)
 		}
 	}
 }
