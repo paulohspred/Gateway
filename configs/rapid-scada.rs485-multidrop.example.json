@@ -23,7 +23,7 @@
   ],
   "tunnels": [
     {
-      "id": "rapid-rs485-bus-1",
+      "id": "rapid-rs485-bus-1-to-scada",
       "field": {
         "mode": "connect",
         "network": "unix",
