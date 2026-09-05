@@ -16,11 +16,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: '1.27.1'
           cache: true
@@ -36,8 +36,17 @@ jobs:
           fi
       - name: Vet
         run: go vet ./...
+      - name: Staticcheck
+        run: |
+          mkdir -p "$RUNNER_TEMP/gobin"
+          GOBIN="$RUNNER_TEMP/gobin" go install honnef.co/go/tools/cmd/staticcheck@1285a6a5ec1e0ebb658f49e82b6c566a878cc3cb
+          "$RUNNER_TEMP/gobin/staticcheck" ./...
       - name: Unit and integration tests
         run: go test ./... -shuffle=on -count=1 -coverprofile=coverage.out
+      - name: Coverage threshold
+        env:
+          RC_GATEWAY_MIN_COVERAGE: '58.0'
+        run: bash scripts/check-coverage.sh coverage.out
       - name: Race detector
         run: go test -race ./... -count=1
       - name: Build
@@ -60,10 +69,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: '1.27.1'
           cache: true
@@ -80,10 +89,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: '1.27.1'
           cache: true
@@ -99,11 +108,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: '1.27.1'
           cache: true
@@ -111,7 +120,7 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/gobin"
           GOBIN="$RUNNER_TEMP/gobin" go install golang.org/x/vuln/cmd/govulncheck@8fcedea455d953a0f8470e1f41420bb6f2e72665
-          GOBIN="$RUNNER_TEMP/gobin" go install github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@v1.12.0
+          GOBIN="$RUNNER_TEMP/gobin" go install github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@07257d5b9cbd2a3d4338a880c0ca50081e1ac445
           echo "$RUNNER_TEMP/gobin" >> "$GITHUB_PATH"
       - name: Vulnerability scan
         run: |
@@ -145,7 +154,7 @@ jobs:
           tar -tzf "$archive" | grep -q '/docs/COMPATIBILITY_MATRIX.md$'
           tar -tzf "$archive" | grep -q '/README.md$'
       - name: Upload release candidates
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: rc-gateway-${{ github.sha }}
           path: |
