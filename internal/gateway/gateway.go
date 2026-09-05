@@ -42,6 +42,11 @@ func (g *Gateway) Run(ctx context.Context) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	pairLimiter, err := bridge.NewPairLimiter(g.cfg.Limits.MaxActivePairs)
+	if err != nil {
+		return fmt.Errorf("stream pair limiter: %w", err)
+	}
+
 	var wg sync.WaitGroup
 	componentCount := 1 + len(g.cfg.Tunnels) + len(g.cfg.SerialProviders) + len(g.cfg.USBHIDProviders) + len(g.cfg.CANProviders) + len(g.cfg.UDPTunnels)
 	errCh := make(chan error, componentCount)
@@ -54,6 +59,7 @@ func (g *Gateway) Run(ctx context.Context) error {
 	g.metrics.Set("rc_gateway_configured_serial_providers", int64(len(g.cfg.SerialProviders)))
 	g.metrics.Set("rc_gateway_configured_usb_hid_providers", int64(len(g.cfg.USBHIDProviders)))
 	g.metrics.Set("rc_gateway_configured_can_providers", int64(len(g.cfg.CANProviders)))
+	g.metrics.Set("rc_gateway_max_active_pairs", int64(g.cfg.Limits.MaxActivePairs))
 
 	g.admin.OnListening = func() { readyCh <- "admin" }
 	wg.Add(1)
@@ -109,16 +115,19 @@ func (g *Gateway) Run(ctx context.Context) error {
 		cfgTunnel := cfgTunnel
 		hooks := g.tunnelHooks(cfgTunnel.ID)
 		hooks.OnReady = func(string) { readyCh <- "stream:" + cfgTunnel.ID }
+		g.metrics.Set("rc_gateway_tunnel_"+cfgTunnel.ID+"_max_concurrent_pairs", int64(cfgTunnel.MaxConcurrentPairs))
 		tunnel := &bridge.Tunnel{
-			ID:            cfgTunnel.ID,
-			Field:         bridgeEndpoint("field", cfgTunnel.Field),
-			Consumer:      bridgeEndpoint("consumer", cfgTunnel.Consumer),
-			PacketFraming: cfgTunnel.PacketFraming,
-			Logger:        g.logger,
-			Hooks:         hooks,
-			PairTimeout:   time.Duration(cfgTunnel.PairTimeoutS) * time.Second,
-			WriteTimeout:  time.Duration(cfgTunnel.WriteTimeoutS) * time.Second,
-			DrainTimeout:  time.Duration(cfgTunnel.DrainTimeoutS) * time.Second,
+			ID:                 cfgTunnel.ID,
+			Field:              bridgeEndpoint("field", cfgTunnel.Field),
+			Consumer:           bridgeEndpoint("consumer", cfgTunnel.Consumer),
+			PacketFraming:      cfgTunnel.PacketFraming,
+			Logger:             g.logger,
+			Hooks:              hooks,
+			PairTimeout:        time.Duration(cfgTunnel.PairTimeoutS) * time.Second,
+			WriteTimeout:       time.Duration(cfgTunnel.WriteTimeoutS) * time.Second,
+			DrainTimeout:       time.Duration(cfgTunnel.DrainTimeoutS) * time.Second,
+			MaxConcurrentPairs: cfgTunnel.MaxConcurrentPairs,
+			GlobalPairLimiter:  pairLimiter,
 		}
 		wg.Add(1)
 		go func() {
@@ -168,7 +177,7 @@ func (g *Gateway) Run(ctx context.Context) error {
 
 	g.admin.SetReady(true)
 	g.metrics.Set("rc_gateway_ready", 1)
-	g.logger.Info("bridge runtime ready", "nodeId", g.cfg.NodeID, "tunnels", len(g.cfg.Tunnels), "udpTunnels", len(g.cfg.UDPTunnels), "serialProviders", len(g.cfg.SerialProviders), "usbHidProviders", len(g.cfg.USBHIDProviders), "canProviders", len(g.cfg.CANProviders))
+	g.logger.Info("bridge runtime ready", "nodeId", g.cfg.NodeID, "tunnels", len(g.cfg.Tunnels), "udpTunnels", len(g.cfg.UDPTunnels), "serialProviders", len(g.cfg.SerialProviders), "usbHidProviders", len(g.cfg.USBHIDProviders), "canProviders", len(g.cfg.CANProviders), "maxActivePairs", g.cfg.Limits.MaxActivePairs)
 
 	select {
 	case <-ctx.Done():
@@ -207,6 +216,7 @@ func udpEndpoint(ep config.UDPEndpoint) datagram.Endpoint {
 
 func (g *Gateway) tunnelHooks(tunnelID string) bridge.Hooks {
 	prefix := "rc_gateway_tunnel_" + tunnelID
+	var active atomic.Int64
 	return bridge.Hooks{
 		OnOpen: func(info bridge.PairInfo) {
 			g.sessions.Open(core.Session{ID: info.PairID, ListenerID: info.TunnelID, Transport: "raw_bridge", RemoteAddr: info.FieldRemote, LocalAddr: info.ConsumerRemote, OpenedAt: info.OpenedAt, LastSeenAt: info.OpenedAt})
@@ -214,7 +224,7 @@ func (g *Gateway) tunnelHooks(tunnelID string) bridge.Hooks {
 			g.metrics.Inc(prefix + "_pairs_opened_total")
 			g.metrics.Set("rc_gateway_active_pairs", g.pairActive.Add(1))
 			g.metrics.Set("rc_gateway_active_sessions", int64(g.sessions.Count()))
-			g.metrics.Set(prefix+"_active", 1)
+			g.metrics.Set(prefix+"_active", active.Add(1))
 		},
 		OnBytes: func(pairID, direction string, n uint64) {
 			g.sessions.Touch(pairID, direction, int(n), time.Now().UTC())
@@ -228,7 +238,7 @@ func (g *Gateway) tunnelHooks(tunnelID string) bridge.Hooks {
 			g.metrics.Inc(prefix + "_pairs_closed_total")
 			g.metrics.Set("rc_gateway_active_pairs", g.pairActive.Add(-1))
 			g.metrics.Set("rc_gateway_active_sessions", int64(g.sessions.Count()))
-			g.metrics.Set(prefix+"_active", 0)
+			g.metrics.Set(prefix+"_active", active.Add(-1))
 			if err != nil {
 				g.metrics.Inc("rc_gateway_bridge_errors_total")
 				g.metrics.Inc(prefix + "_errors_total")
