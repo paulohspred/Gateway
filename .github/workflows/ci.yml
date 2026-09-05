@@ -1,0 +1,148 @@
+name: Gateway CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gateway-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Quality, unit, race and config
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.1'
+          cache: true
+      - name: Canonical project state
+        run: bash scripts/check-project-state-updated.sh
+      - name: Format
+        run: test -z "$(gofmt -l .)"
+      - name: Vet
+        run: go vet ./...
+      - name: Unit and integration tests
+        run: go test ./... -shuffle=on -count=1 -coverprofile=coverage.out
+      - name: Race detector
+        run: go test -race ./... -count=1
+      - name: Build
+        run: go build -trimpath ./cmd/rc-gateway
+      - name: Validate production examples
+        run: |
+          ./rc-gateway --version
+          for cfg in configs/*.json; do
+            echo "checking $cfg"
+            ./rc-gateway --check-config --config "$cfg"
+          done
+      - name: Coverage summary
+        run: go tool cover -func=coverage.out | tail -1
+      - name: Local CI script parity
+        run: bash scripts/ci.sh
+
+  stress:
+    name: Stress and leak gate
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.1'
+          cache: true
+      - name: 1000 duplex pairs and 1000 TCP churn cycles
+        env:
+          RC_GATEWAY_STRESS: '1'
+          RC_GATEWAY_STRESS_PAIRS: '1000'
+          RC_GATEWAY_CHURN_CYCLES: '1000'
+        run: go test ./internal/bridge -run '^TestStress' -count=1 -timeout=12m
+
+  soak:
+    name: Impairment and mini-soak gate
+    needs: stress
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.1'
+          cache: true
+      - name: Impaired reconnect mini-soak
+        env:
+          RC_GATEWAY_SOAK: '1'
+          RC_GATEWAY_SOAK_SECONDS: '30'
+        run: go test ./internal/bridge -run '^TestSoakImpairedReconnect$' -count=1 -timeout=2m
+
+  release:
+    name: Security, reproducibility and release
+    needs: soak
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.1'
+          cache: true
+      - name: Install pinned supply-chain tools
+        run: |
+          mkdir -p "$RUNNER_TEMP/gobin"
+          GOBIN="$RUNNER_TEMP/gobin" go install golang.org/x/vuln/cmd/govulncheck@8fcedea455d953a0f8470e1f41420bb6f2e72665
+          GOBIN="$RUNNER_TEMP/gobin" go install github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@v1.12.0
+          echo "$RUNNER_TEMP/gobin" >> "$GITHUB_PATH"
+      - name: Vulnerability scan
+        run: "$RUNNER_TEMP/gobin/govulncheck" ./...
+      - name: Shell syntax
+        run: bash -n scripts/*.sh
+      - name: Reproducible release build
+        run: |
+          VERSION="ci-${GITHUB_SHA}"
+          REQUIRE_SBOM=1 ARCHES="amd64 arm64" DIST_DIR="$PWD/dist-a" bash scripts/build-release.sh "$VERSION"
+          REQUIRE_SBOM=1 ARCHES="amd64 arm64" DIST_DIR="$PWD/dist-b" bash scripts/build-release.sh "$VERSION"
+          for arch in amd64 arm64; do
+            a="dist-a/rc-gateway-umbrella_${VERSION}_linux_${arch}.tar.gz"
+            b="dist-b/rc-gateway-umbrella_${VERSION}_linux_${arch}.tar.gz"
+            cmp "$a" "$b"
+            cmp "$a.sha256" "$b.sha256"
+          done
+      - name: Validate release archive and installer dry-run
+        run: |
+          VERSION="ci-${GITHUB_SHA}"
+          archive="dist-a/rc-gateway-umbrella_${VERSION}_linux_amd64.tar.gz"
+          bash scripts/install-release.sh --dry-run "$archive" "$archive.sha256" configs/gateway.example.json
+          tar -tzf "$archive" | grep -q '/sbom.cdx.json$'
+          tar -tzf "$archive" | grep -q '/systemd/rc-gateway-umbrella.service$'
+          tar -tzf "$archive" | grep -q '/scripts/rollback-release.sh$'
+      - name: Upload release candidates
+        uses: actions/upload-artifact@v4
+        with:
+          name: rc-gateway-${{ github.sha }}
+          path: |
+            dist-a/*.tar.gz
+            dist-a/*.sha256
+          if-no-files-found: error
+          retention-days: 14
+      - name: Attest release provenance
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: 'dist-a/*.tar.gz'
