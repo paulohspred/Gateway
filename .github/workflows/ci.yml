@@ -33,7 +33,8 @@ jobs:
       - name: Canonical project state
         run: bash scripts/check-project-state-updated.sh
       - name: Workflow lint
-        run: "$RUNNER_TEMP/gobin/actionlint" .github/workflows/ci.yml .github/workflows/codeql.yml .github/workflows/release-attest.yml
+        run: |
+          "$RUNNER_TEMP/gobin/actionlint" .github/workflows/ci.yml .github/workflows/codeql.yml .github/workflows/release-attest.yml
       - name: Format
         run: |
           unformatted="$(gofmt -l .)"
@@ -50,7 +51,8 @@ jobs:
       - name: Vet
         run: go vet ./...
       - name: Staticcheck
-        run: "$RUNNER_TEMP/gobin/staticcheck" ./...
+        run: |
+          "$RUNNER_TEMP/gobin/staticcheck" ./...
       - name: Unit and integration tests
         run: go test ./... -shuffle=on -count=1 -coverprofile=coverage.out
       - name: Coverage threshold
@@ -136,7 +138,8 @@ jobs:
           GOBIN="$RUNNER_TEMP/gobin" go install github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@07257d5b9cbd2a3d4338a880c0ca50081e1ac445
           echo "$RUNNER_TEMP/gobin" >> "$GITHUB_PATH"
       - name: Vulnerability scan
-        run: "$RUNNER_TEMP/gobin/govulncheck" ./...
+        run: |
+          "$RUNNER_TEMP/gobin/govulncheck" ./...
       - name: Shell syntax
         run: bash -n scripts/*.sh
       - name: Installer archive security tests
