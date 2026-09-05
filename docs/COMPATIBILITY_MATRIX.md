@@ -20,6 +20,17 @@
 | SocketCAN clássico | field-test-ready em software | preserva ABI/frame em `unixpacket` | interface/transceiver físico |
 | CAN-FD | field-test-ready em software | preserva ABI/frame FD em `unixpacket` | interface/transceiver FD físico |
 
+## Consumidores validados por contrato
+
+| Consumidor | Integração | Estado | Gate restante |
+|---|---|---|---|
+| Rapid SCADA v6 | `DrvCnlBasic` `TcpClient` → consumer TCP do Gateway | contrato/configuração preparado contra `scada-v6` master `1fd36080...` | executar Rapid SCADA real em VM |
+| Rapid SCADA + Modbus TCP | `DrvModbus`, `TransMode=TCP` | perfis Gateway preparados | VM + dispositivo/servidor Modbus real |
+| Rapid SCADA + RTU-over-TCP | `DrvModbus`, `TransMode=RTU` | perfis Gateway preparados | VM + modem/serial server real |
+| Rapid SCADA + RS485 multidrop | `ConnectionMode=Shared`, `TransMode=RTU`, IDs no Rapid SCADA | perfil Gateway preparado | VM + barramento físico multidrop |
+
+A integração Rapid SCADA não incorpora fonte/binário do Rapid SCADA ao Gateway. Consulte `RAPID_SCADA_INTEGRATION.md`.
+
 ## Protocolos que atravessam sem driver semântico
 
 Quando o protocolo já é transportado pelo meio acima, o Gateway pode atuar como ponte sem conhecer seu significado.
@@ -39,6 +50,18 @@ Quando o protocolo já é transportado pelo meio acima, o Gateway pode atuar com
 | J1939 / CANopen | SocketCAN/CAN-FD | Gateway preserva frames; consumidor interpreta PGN/PDO |
 | USB HID genérico | hidraw → `unixpacket` | Gateway preserva reports; consumidor interpreta protocolo HID/aplicação |
 | ComAp Direct por USB | USB HID quando a controladora enumerar como hidraw | transporte implementado; adapter semântico não é prometido até HIL/documentação suficiente |
+
+## Rapid SCADA: regra de `TransMode`
+
+O Rapid SCADA deve receber o mesmo protocolo que o driver declara:
+
+```text
+native Modbus TCP      -> TransMode=TCP
+Modbus RTU raw em TCP  -> TransMode=RTU
+Modbus ASCII em TCP    -> TransMode=ASCII
+```
+
+O Gateway não converte RTU↔TCP. Para um único RS485 multidrop, use uma conexão compartilhada no Rapid SCADA; não crie múltiplos mestres concorrentes para o mesmo barramento.
 
 ## Regras importantes para USB HID
 

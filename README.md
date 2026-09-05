@@ -62,6 +62,49 @@ O Gateway transporta o barramento serial de forma transparente. Várias controla
 
 Modelos diferentes podem coexistir desde que sejam eletricamente e protocolarmente compatíveis no mesmo barramento. O mapa de registradores e a semântica de cada modelo pertencem ao Rapid SCADA/FUXA/driver, não ao Gateway.
 
+## Integração nativa com Rapid SCADA v6
+
+O repositório inclui agora um contrato de integração específico para Rapid SCADA v6, revisado contra `RapidScada/scada-v6` `master` commit `1fd36080c7830303f921672fdaee335a06e7ae50`.
+
+A integração **não copia e não incorpora Rapid SCADA**. Ela usa os componentes nativos do Rapid SCADA:
+
+```text
+DrvCnlBasic / TcpClient
+        |
+        v
+consumer TCP do RC Gateway
+        |
+        v
+campo / modem / serial / VPN
+```
+
+Para Modbus, o Rapid SCADA `DrvModbus` deve usar o modo correspondente aos bytes entregues pelo Gateway:
+
+```text
+Modbus TCP nativo      -> TransMode=TCP
+Modbus RTU raw em TCP  -> TransMode=RTU
+Modbus ASCII em TCP    -> TransMode=ASCII
+```
+
+Para um único RS485 multidrop, a recomendação é `ConnectionMode=Shared` no Rapid SCADA e vários dispositivos/IDs na mesma communication line. Isso preserva um único mestre efetivo no barramento.
+
+Perfis prontos:
+
+- `configs/rapid-scada.modbus-tcp.example.json`;
+- `configs/rapid-scada.rtu-over-tcp.example.json`;
+- `configs/rapid-scada.rs485-multidrop.example.json`.
+
+Procedimento completo: [`docs/RAPID_SCADA_INTEGRATION.md`](./docs/RAPID_SCADA_INTEGRATION.md).
+
+Depois de instalar/configurar o Rapid SCADA real na VM:
+
+```bash
+sudo RAPID_SCADA_COMM_SERVICE=scadacomm6.service \
+  /opt/rc-gateway/current/scripts/rapid-scada-acceptance.sh
+```
+
+Esse teste exige uma sessão real do Rapid SCADA Communicator através do Gateway antes de promover a combinação para `vm_accepted`.
+
 ## Segurança por padrão
 
 - `commandPlaneEnabled=true` é rejeitado;
@@ -222,7 +265,7 @@ Rollback:
 sudo /opt/rc-gateway/current/scripts/rollback-release.sh
 ```
 
-O release leva `LICENSE`, `NOTICE`, `THIRD_PARTY_NOTICES.md`, SBOM, documentação, scripts de diagnóstico/VM, manifest e metadados. Version tags possuem workflow dedicado de provenance/attestation.
+O release leva `LICENSE`, `NOTICE`, `THIRD_PARTY_NOTICES.md`, SBOM, documentação, scripts de diagnóstico/VM/Rapid SCADA, manifest e metadados. Version tags possuem workflow dedicado de provenance/attestation.
 
 ## Licenciamento
 
@@ -232,6 +275,8 @@ A visibilidade pública do repositório não concede permissão para usar, execu
 
 Componentes de terceiros mantêm suas próprias licenças. Os avisos necessários estão em [`THIRD_PARTY_NOTICES.md`](./THIRD_PARTY_NOTICES.md) e no SBOM.
 
+Rapid SCADA é um produto externo e não é incluído no artifact do Gateway. A integração usa apenas seus canais/drivers documentados.
+
 Se o requisito for impedir também o **acesso** ao código-fonte, e não apenas proibir seu uso por licença, o repositório precisa ser tornado privado nas configurações do GitHub.
 
 ## Documentação
@@ -240,6 +285,7 @@ Se o requisito for impedir também o **acesso** ao código-fonte, e não apenas 
 - [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) — arquitetura;
 - [`docs/PRODUCTION_MATRIX.md`](./docs/PRODUCTION_MATRIX.md) — gates de produção;
 - [`docs/COMPATIBILITY_MATRIX.md`](./docs/COMPATIBILITY_MATRIX.md) — transportes/protocolos e limites;
+- [`docs/RAPID_SCADA_INTEGRATION.md`](./docs/RAPID_SCADA_INTEGRATION.md) — integração nativa Rapid SCADA v6;
 - [`docs/CONFIGURATION_COMPATIBILITY.md`](./docs/CONFIGURATION_COMPATIBILITY.md) — política de schema/migração;
 - [`docs/USB_HID_COMAP.md`](./docs/USB_HID_COMAP.md) — HID/ComAp/HIL;
 - [`docs/RUNBOOK.md`](./docs/RUNBOOK.md) — instalação/operação/rollback;

@@ -114,6 +114,30 @@ The exact candidate commit must pass:
 
 Third-party GitHub Actions are pinned to immutable commit SHAs. Dependabot is configured to propose Go-module and GitHub Actions updates; updates still require the full validation chain.
 
+## Rapid SCADA v6 integration contract
+
+Rapid SCADA is an external consumer, not part of the Gateway core and not bundled into the proprietary Gateway artifact. Compatibility was reviewed against `RapidScada/scada-v6` `master` commit `1fd36080c7830303f921672fdaee335a06e7ae50`.
+
+The supported native integration uses Rapid SCADA `DrvCnlBasic` as `TcpClient` and lets the Rapid SCADA application driver interpret the payload. For Modbus, `DrvModbus` supports `TransMode=RTU`, `ASCII` and `TCP`.
+
+Canonical mapping:
+
+- native Modbus TCP delivered by the Gateway -> Rapid SCADA `TransMode=TCP`;
+- Modbus RTU raw encapsulated in TCP -> Rapid SCADA `TransMode=RTU`;
+- Modbus ASCII raw encapsulated in TCP -> Rapid SCADA `TransMode=ASCII`.
+
+For one Gateway tunnel, especially a single RS485 multidrop bus, `ConnectionMode=Shared` is the recommended Rapid SCADA channel mode. Multiple Modbus slave IDs belong to the same Rapid SCADA communication line and are not modeled inside the Gateway.
+
+Repository integration assets:
+
+- `docs/RAPID_SCADA_INTEGRATION.md`;
+- `configs/rapid-scada.modbus-tcp.example.json`;
+- `configs/rapid-scada.rtu-over-tcp.example.json`;
+- `configs/rapid-scada.rs485-multidrop.example.json`;
+- `scripts/rapid-scada-acceptance.sh`.
+
+The previous fully green automated software checkpoint is `9f13cd5a69db31b3a4e01999844834e99fa65336`. Any commit adding or changing the Rapid SCADA integration assets must pass the complete CI/CodeQL chain again before it inherits `software_field_test_ready` status. Actual Rapid SCADA interoperability remains a VM acceptance gate until `scadacomm6.service` is run against the exact Gateway artifact.
+
 ## Configuration compatibility
 
 Current canonical pre-v1 schema: `schema: 3`.
@@ -129,7 +153,7 @@ rc-gateway_<version>_linux_amd64.tar.gz
 rc-gateway_<version>_linux_arm64.tar.gz
 ```
 
-A release includes the binary, validated examples, systemd unit, install/rollback/diagnostic/VM scripts, operational documentation, `LICENSE`, `NOTICE`, `THIRD_PARTY_NOTICES.md`, `MANIFEST`, `VERSION` and SBOM. The manifest identifies `product=rc-gateway` and `license=Proprietary-All-Rights-Reserved`.
+A release includes the binary, validated examples, systemd unit, install/rollback/diagnostic/VM scripts, Rapid SCADA acceptance tooling, operational documentation, `LICENSE`, `NOTICE`, `THIRD_PARTY_NOTICES.md`, `MANIFEST`, `VERSION` and SBOM. The manifest identifies `product=rc-gateway` and `license=Proprietary-All-Rights-Reserved`.
 
 Version-tag builds can be provenance-attested through GitHub OIDC. SHA256 is an integrity checksum; provenance/attestation is the publisher/build-chain evidence.
 
@@ -151,13 +175,15 @@ No state is inferred from an older successful commit. `software_field_test_ready
 
 ### Repository-owner administration
 
-The `main` branch is currently not protected by GitHub branch protection/rulesets. The connected integration can verify this state but cannot write repository administration. Before treating `main` as production history, apply the settings in `GITHUB_PROTECTION.md`.
+The `main` branch is currently not protected by GitHub branch protection/rulesets according to the last repository check. The connected integration can verify this state but cannot write repository administration. Before treating `main` as production history, apply and verify the settings in `GITHUB_PROTECTION.md`.
 
 Because the repository is public, third parties can technically read/clone the source even though the proprietary license grants no permission to reuse it. If the requirement is to prevent source access rather than merely prohibit licensed use, the repository owner must change visibility to private.
 
 ### VM acceptance
 
 Install the exact CI/release artifact on a clean Ubuntu Server 24.04 amd64 VM and execute `VM_ACCEPTANCE.md` / `scripts/vm-acceptance.sh`, including reboot persistence, watchdog, failure recovery, upgrade, rollback, negative config tests, resource observation and a 24-hour soak. A 7-day soak is the target before broad production rollout.
+
+When Rapid SCADA is part of the deployment, install/configure the real Rapid SCADA v6 and execute `scripts/rapid-scada-acceptance.sh`. The acceptance must prove at least one real Rapid SCADA Communicator session through the Gateway; repository-only review does not substitute this test.
 
 ### Hardware-in-the-loop
 

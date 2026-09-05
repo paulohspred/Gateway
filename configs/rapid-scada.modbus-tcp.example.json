@@ -1,0 +1,31 @@
+{
+  "schema": 3,
+  "nodeId": "rc-gateway-rapid-modbus-tcp",
+  "admin": {"bind": "127.0.0.1:18080"},
+  "security": {
+    "requireAllowlist": true,
+    "commandPlaneEnabled": false
+  },
+  "tunnels": [
+    {
+      "id": "modbus-tcp-device-to-rapid",
+      "pairTimeoutSeconds": 30,
+      "writeTimeoutSeconds": 30,
+      "drainTimeoutSeconds": 2,
+      "field": {
+        "mode": "connect",
+        "network": "tcp",
+        "address": "10.60.20.222:502",
+        "dialTimeoutSeconds": 10,
+        "reconnectSeconds": 5,
+        "keepAliveSeconds": 30
+      },
+      "consumer": {
+        "mode": "listen",
+        "network": "tcp",
+        "bind": "127.0.0.1:25020",
+        "keepAliveSeconds": 30
+      }
+    }
+  ]
+}
