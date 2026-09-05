@@ -129,9 +129,12 @@ func (t *Tunnel) Run(ctx context.Context) error {
 		if t.Logger != nil {
 			t.Logger.Info("bridge pair open", "tunnel", t.ID, "pair", pairID, "fieldRemote", info.FieldRemote, "consumerRemote", info.ConsumerRemote, "packetFraming", t.PacketFraming)
 		}
-		if t.PacketFraming == "length32be" {
+		switch {
+		case t.Field.Network == "unixpacket" && t.Consumer.Network == "unixpacket":
+			err = copyPacketDuplex(ctx, pairID, fieldConn, consumerConn, t.Hooks, t.WriteTimeout, t.DrainTimeout)
+		case t.PacketFraming == "length32be":
 			err = copyPacketFramedDuplex(ctx, pairID, fieldConn, consumerConn, t.Field.Network == "unixpacket", t.Hooks, t.WriteTimeout, t.DrainTimeout)
-		} else {
+		default:
 			err = copyDuplex(ctx, pairID, fieldConn, consumerConn, t.Hooks, t.WriteTimeout, t.DrainTimeout)
 		}
 		_ = fieldConn.Close()
