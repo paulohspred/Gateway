@@ -22,7 +22,7 @@ func TestLoadRejectsTrailingJSONValue(t *testing.T) {
 }
 
 func TestLoadRejectsAdminAndWildcardTCPConflict(t *testing.T) {
-	p := writeConfig(t, `{"schema":3,"nodeId":"gw","admin":{"bind":"127.0.0.1:18080"},"tunnels":[{"id":"bad","field":{"mode":"listen","bind":"0.0.0.0:18080"},"consumer":{"mode":"listen","bind":"127.0.0.1:28080"}}]}`)
+	p := writeConfig(t, `{"schema":3,"nodeId":"gw","admin":{"bind":"127.0.0.1:18080"},"tunnels":[{"id":"bad","field":{"mode":"listen","bind":"0.0.0.0:18080","allowedCidrs":["0.0.0.0/0"]},"consumer":{"mode":"listen","bind":"127.0.0.1:28080"}}]}`)
 	_, err := LoadStrict(p)
 	if err == nil || !strings.Contains(err.Error(), "conflicts") {
 		t.Fatalf("expected TCP bind conflict, got %v", err)
@@ -30,7 +30,7 @@ func TestLoadRejectsAdminAndWildcardTCPConflict(t *testing.T) {
 }
 
 func TestLoadRejectsDuplicateTCPListenerPortWithWildcard(t *testing.T) {
-	p := writeConfig(t, `{"schema":3,"nodeId":"gw","tunnels":[{"id":"one","field":{"mode":"listen","bind":"0.0.0.0:15001"},"consumer":{"mode":"listen","bind":"127.0.0.1:25001"}},{"id":"two","field":{"mode":"listen","bind":"127.0.0.1:15001"},"consumer":{"mode":"listen","bind":"127.0.0.1:25002"}}]}`)
+	p := writeConfig(t, `{"schema":3,"nodeId":"gw","tunnels":[{"id":"one","field":{"mode":"listen","bind":"0.0.0.0:15001","allowedCidrs":["0.0.0.0/0"]},"consumer":{"mode":"listen","bind":"127.0.0.1:25001"}},{"id":"two","field":{"mode":"listen","bind":"127.0.0.1:15001"},"consumer":{"mode":"listen","bind":"127.0.0.1:25002"}}]}`)
 	_, err := LoadStrict(p)
 	if err == nil || !strings.Contains(err.Error(), "TCP bind") {
 		t.Fatalf("expected duplicate TCP listener rejection, got %v", err)
@@ -38,7 +38,7 @@ func TestLoadRejectsDuplicateTCPListenerPortWithWildcard(t *testing.T) {
 }
 
 func TestLoadRejectsDuplicateUDPListener(t *testing.T) {
-	p := writeConfig(t, `{"schema":3,"nodeId":"gw","tunnels":[],"udpTunnels":[{"id":"u1","field":{"mode":"listen","bind":"0.0.0.0:16001"},"consumer":{"mode":"connect","address":"127.0.0.1:26001"}},{"id":"u2","field":{"mode":"listen","bind":"127.0.0.1:16001"},"consumer":{"mode":"connect","address":"127.0.0.1:26002"}}]}`)
+	p := writeConfig(t, `{"schema":3,"nodeId":"gw","tunnels":[],"udpTunnels":[{"id":"u1","field":{"mode":"listen","bind":"0.0.0.0:16001","allowedCidrs":["0.0.0.0/0"]},"consumer":{"mode":"connect","address":"127.0.0.1:26001"}},{"id":"u2","field":{"mode":"listen","bind":"127.0.0.1:16001"},"consumer":{"mode":"connect","address":"127.0.0.1:26002"}}]}`)
 	_, err := LoadStrict(p)
 	if err == nil || !strings.Contains(err.Error(), "UDP bind") {
 		t.Fatalf("expected duplicate UDP listener rejection, got %v", err)
