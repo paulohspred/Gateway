@@ -1,0 +1,55 @@
+name: Release provenance
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+
+jobs:
+  attest:
+    name: Build and attest release artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.27.1'
+          cache: true
+      - name: Install pinned SBOM tool
+        run: |
+          mkdir -p "$RUNNER_TEMP/gobin"
+          GOBIN="$RUNNER_TEMP/gobin" go install github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@07257d5b9cbd2a3d4338a880c0ca50081e1ac445
+          echo "$RUNNER_TEMP/gobin" >> "$GITHUB_PATH"
+      - name: Build canonical artifacts
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            VERSION="$GITHUB_REF_NAME"
+          else
+            VERSION="candidate-${GITHUB_SHA}"
+          fi
+          REQUIRE_SBOM=1 ARCHES="amd64 arm64" bash scripts/build-release.sh "$VERSION"
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-path: |
+            dist/*.tar.gz
+            dist/*.sha256
+      - name: Upload attested artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: rc-gateway-attested-${{ github.sha }}
+          path: |
+            dist/*.tar.gz
+            dist/*.sha256
+          if-no-files-found: error
+          retention-days: 30
