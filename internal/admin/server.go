@@ -23,7 +23,7 @@ type Server struct {
 
 func (s *Server) SetReady(v bool) { s.ready.Store(v) }
 
-func (s *Server) Run(ctx context.Context) error {
+func (s *Server) handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -55,13 +55,16 @@ func (s *Server) Run(ctx context.Context) error {
 		_ = json.NewEncoder(w).Encode(map[string]any{"nodeId": s.NodeID, "ready": s.ready.Load(), "activeSessions": s.Sessions.Count(), "commandPlane": "disabled"})
 	})
 
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		mux.ServeHTTP(w, r)
 	})
+}
+
+func (s *Server) Run(ctx context.Context) error {
 	srv := &http.Server{
 		Addr:              s.Bind,
-		Handler:           handler,
+		Handler:           s.handler(),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,

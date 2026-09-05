@@ -7,10 +7,14 @@ UNIT_TARGET="${RC_GATEWAY_UNIT:-/etc/systemd/system/rc-gateway-umbrella.service}
 HEALTH_URL="${RC_GATEWAY_HEALTH_URL:-http://127.0.0.1:18080/readyz}"
 HEALTH_ATTEMPTS="${RC_GATEWAY_HEALTH_ATTEMPTS:-30}"
 HEALTH_DELAY="${RC_GATEWAY_HEALTH_DELAY_SECONDS:-1}"
+KEEP_CONFIG_BACKUPS="${RC_GATEWAY_CONFIG_BACKUPS:-10}"
 usage(){ echo "Uso: $0 [--dry-run] ARQUIVO.tar.gz ARQUIVO.sha256 [CONFIG_CANDIDATA.json]" >&2; exit 64; }
 DRY_RUN=0
 if [[ "${1:-}" == "--dry-run" ]]; then DRY_RUN=1; shift; fi
 [[ $# -ge 2 && $# -le 3 ]] || usage
+[[ "$HEALTH_ATTEMPTS" =~ ^[0-9]+$ ]] && (( HEALTH_ATTEMPTS >= 1 && HEALTH_ATTEMPTS <= 300 )) || { echo "ERRO: RC_GATEWAY_HEALTH_ATTEMPTS deve ser 1..300." >&2; exit 64; }
+[[ "$HEALTH_DELAY" =~ ^[0-9]+$ ]] && (( HEALTH_DELAY >= 1 && HEALTH_DELAY <= 60 )) || { echo "ERRO: RC_GATEWAY_HEALTH_DELAY_SECONDS deve ser 1..60." >&2; exit 64; }
+[[ "$KEEP_CONFIG_BACKUPS" =~ ^[0-9]+$ ]] && (( KEEP_CONFIG_BACKUPS >= 1 && KEEP_CONFIG_BACKUPS <= 100 )) || { echo "ERRO: RC_GATEWAY_CONFIG_BACKUPS deve ser 1..100." >&2; exit 64; }
 ARCHIVE="$(realpath "$1")"
 CHECKSUM="$(realpath "$2")"
 CANDIDATE_CONFIG="${3:-$CONFIG_TARGET}"
@@ -24,9 +28,11 @@ tmp="$(mktemp -d)"
 cleanup(){ rm -rf "$tmp"; }
 trap cleanup EXIT
 if tar -tzf "$ARCHIVE" | grep -Eq '(^/|(^|/)\.\.(/|$))'; then echo "ERRO: release contém caminho inseguro." >&2; exit 4; fi
-tar -xzf "$ARCHIVE" -C "$tmp"
-mapfile -t roots < <(find "$tmp" -mindepth 1 -maxdepth 1 -type d -print)
-[[ ${#roots[@]} -eq 1 ]] || { echo "ERRO: release deve conter exatamente um diretório raiz." >&2; exit 4; }
+unsafe_entry="$(tar -tvzf "$ARCHIVE" | awk 'substr($1,1,1)!="-" && substr($1,1,1)!="d" {print; exit}')"
+[[ -z "$unsafe_entry" ]] || { echo "ERRO: release contém tipo de entrada não permitido (somente diretórios/arquivos regulares): $unsafe_entry" >&2; exit 4; }
+tar --no-same-owner --no-same-permissions -xzf "$ARCHIVE" -C "$tmp"
+mapfile -t roots < <(find "$tmp" -mindepth 1 -maxdepth 1 -print)
+[[ ${#roots[@]} -eq 1 && -d "${roots[0]}" ]] || { echo "ERRO: release deve conter exatamente um diretório raiz e nenhuma entrada paralela." >&2; exit 4; }
 pkg="${roots[0]}"
 [[ -x "$pkg/bin/rc-gateway" ]] || { echo "ERRO: binário rc-gateway ausente/inexecutável." >&2; exit 4; }
 [[ -f "$pkg/systemd/rc-gateway-umbrella.service" ]] || { echo "ERRO: unit systemd ausente." >&2; exit 4; }
@@ -47,7 +53,7 @@ config_dir="$(dirname "$CONFIG_TARGET")"
 if [[ ! -d "$config_dir" ]]; then install -d -o root -g root -m 0755 "$config_dir"; fi
 release_dir="$ROOT/releases/$version"
 if [[ -e "$release_dir" ]]; then
-  [[ -f "$release_dir/MANIFEST" ]] || { echo "ERRO: release existente sem MANIFEST: $release_dir" >&2; exit 5; }
+  [[ -d "$release_dir" && -f "$release_dir/MANIFEST" ]] || { echo "ERRO: release existente inválida: $release_dir" >&2; exit 5; }
   old_commit="$(awk -F= '$1=="commit"{print $2}' "$release_dir/MANIFEST")"
   new_commit="$(awk -F= '$1=="commit"{print $2}' "$pkg/MANIFEST")"
   [[ -n "$old_commit" && "$old_commit" == "$new_commit" ]] || { echo "ERRO: versão $version já existe com conteúdo diferente." >&2; exit 5; }
@@ -67,6 +73,8 @@ if [[ -f "$CONFIG_TARGET" ]]; then
   install -d -o root -g root -m 0700 "$ROOT/config-backups"
   config_backup="$ROOT/config-backups/config-$(date -u +%Y%m%dT%H%M%SZ)-$$.json"
   cp --preserve=mode,ownership,timestamps "$CONFIG_TARGET" "$config_backup"
+  mapfile -d '' -t backups < <(find "$ROOT/config-backups" -maxdepth 1 -type f -name 'config-*.json' -print0 | sort -z -r)
+  for ((i=KEEP_CONFIG_BACKUPS; i<${#backups[@]}; i++)); do rm -f -- "${backups[$i]}"; done
 fi
 config_tmp="$(mktemp "$(dirname "$CONFIG_TARGET")/.rc-gateway-config.XXXXXX")"
 install -o root -g rc-gateway -m 0640 "$CANDIDATE_CONFIG" "$config_tmp"

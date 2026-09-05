@@ -57,6 +57,7 @@ SocketCAN/CAN-FD preserva frames do ABI Linux. J1939/CANopen permanecem responsa
 - TLS listener exige chave/certificado e mTLS exige CA;
 - CAN TX permanece desabilitado por padrão;
 - caminhos de sockets Unix são normalizados e arquivos comuns nunca são removidos como se fossem sockets stale;
+- release archives rejeitam symlinks, hardlinks e entradas especiais;
 - firewall/VPN continuam fazendo parte do plano de rede OT.
 
 Admin padrão: `127.0.0.1:18080`.
@@ -114,12 +115,12 @@ O GitHub Actions executa, em sequência:
 5. 1.000 pares duplex simultâneos + 1.000 ciclos de churn TCP;
 6. impairment + mini-soak;
 7. `govulncheck`;
-8. build Linux `amd64`/`arm64` reproduzível;
-9. SBOM CycloneDX;
-10. SHA256, dry-run do instalador e artifact de release;
-11. provenance attestation nas builds promovidas em `main`.
+8. testes de segurança do instalador;
+9. build Linux `amd64`/`arm64` reproduzível;
+10. SBOM CycloneDX;
+11. SHA256, dry-run do instalador e artifact de release.
 
-`/readyz` só fica verde depois que todos os componentes configurados inicializam sua camada local de runtime. Isso não substitui HIL físico: serial/CAN/dispositivo remoto ainda precisam de homologação real.
+As GitHub Actions usadas no workflow são fixadas por commit SHA. `/readyz` só fica verde depois que todos os componentes configurados inicializam sua camada local de runtime. Isso não substitui HIL físico: serial/CAN/dispositivo remoto ainda precisam de homologação real.
 
 ## Release standalone
 
@@ -161,7 +162,7 @@ Rollback:
 sudo /opt/rc-gateway-umbrella/current/scripts/rollback-release.sh
 ```
 
-O instalador valida integridade, estrutura e configuração antes da troca atômica; readiness é obrigatória após restart e falha de atualização aciona rollback automático.
+O instalador valida integridade, estrutura e configuração antes da troca atômica; rejeita tipos de archive inseguros, limita backups de configuração, exige readiness após restart e executa rollback automático em falha.
 
 ## Documentação
 

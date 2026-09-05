@@ -15,7 +15,7 @@ O Gateway é uma ponte universal de conectividade. Rapid SCADA, FUXA, software d
 
 ## Repositório standalone
 
-O produto agora vive diretamente na raiz de `github.com/paulohspred/Gateway`.
+O produto vive diretamente na raiz de `github.com/paulohspred/Gateway`.
 
 Não existe mais a camada de diretório `gateway-umbrella/`. O módulo Go é:
 
@@ -31,29 +31,32 @@ cmd/ internal/ configs/ docs/ scripts/ systemd/ .github/
 
 ## Estado deste ciclo
 
-Este ciclo executa reorganização standalone e hardening antes de promover um novo checkpoint. Até o GitHub Actions do novo repositório ficar integralmente verde, o HEAD desta branch deve ser tratado como **candidate / validation pending**.
+Este ciclo reorganiza o produto como repositório standalone e aplica hardening de segurança, disponibilidade, testes e release. Enquanto o workflow `Gateway CI` do HEAD não estiver integralmente verde, o estado é **candidate / validation pending**.
 
-O último código de origem já havia sido validado no monorepo anterior, mas essa evidência não substitui repetir os gates depois das mudanças de segurança e lifecycle feitas aqui.
+O código de origem já possuía checkpoints verdes no monorepo anterior, mas toda alteração deste ciclo é revalidada no novo repositório.
 
 ### Mudanças realizadas
 
 - conteúdo do produto promovido para a raiz do repositório;
 - module/import path migrado para `github.com/paulohspred/Gateway`;
 - scripts restaurados como executáveis;
-- GitHub Actions standalone restaurado;
-- registry de métricas passa a tirar snapshot e libera lock antes de I/O HTTP;
+- GitHub Actions standalone restaurado e actions de terceiros fixadas por commit SHA;
+- registry de métricas passa a tirar snapshot e liberar lock antes de I/O HTTP;
 - admin HTTP passa a aceitar somente loopback pela configuração de produção;
-- admin recebe timeouts completos, limite de headers, GET-only e `nosniff`;
+- admin recebe timeouts completos, limite de headers, rotas GET-only e `nosniff`;
 - opções TLS são fail-closed: configuração TLS com `enabled=false` é rejeitada;
 - listeners TCP/UDP públicos exigem allowlist independentemente do flag legado;
 - caminhos de sockets de providers são canonicalizados antes de comparação;
 - IDs que colidem depois da sanitização de métricas são rejeitados;
 - provider CAN não remove arquivo regular em caminho de socket e valida existência da interface no startup;
 - providers serial/Unix criam diretório de socket com permissões restritas e sockets `0660`;
-- expiração UDP revalida `lastSeen` e toca sessões existentes sob lock;
-- runtime só marca `/readyz` após todos os componentes configurados inicializarem sua camada local;
+- expiração UDP revalida `lastSeen` antes de remover sessão;
+- runtime só marca `/readyz` depois da inicialização local de todos os componentes configurados;
 - erro fatal de componente cancela o runtime interno e aguarda goroutines antes de retornar;
 - allowlist normaliza prefixos e IPv4-mapped peer addresses;
+- testes dedicados cobrem admin HTTP, lifecycle do admin, SessionRegistry, lifecycle/readiness do Gateway, lock de métricas, configuração fail-closed, allowlist e segurança de socket CAN;
+- instalador rejeita symlinks, hardlinks e entradas especiais no archive, exige uma única raiz e limita retenção de backups de configuração;
+- CI testa archives maliciosos do instalador;
 - documentação e catálogo foram alinhados ao estado bridge-first atual.
 
 ## Invariantes de segurança
@@ -67,8 +70,9 @@ O último código de origem já havia sido validado no monorepo anterior, mas es
 - opções TLS não podem ficar silenciosamente configuradas com TLS desligado;
 - Unix/provider socket nunca pode sobrescrever arquivo comum;
 - IDs e recursos físicos não podem colidir silenciosamente;
+- release archive não pode conter links ou entradas especiais;
 - nenhum payload pode ser alterado silenciosamente;
-- nenhum recurso deve crescer sem limite.
+- recursos internos configuráveis possuem limites explícitos ou retenção limitada.
 
 ## Transportes implementados
 
@@ -110,14 +114,14 @@ Readiness **não** significa que o equipamento físico respondeu. Serial é aber
 9. impairment + mini-soak;
 10. `govulncheck`;
 11. shell syntax;
-12. build Linux amd64/arm64 reproduzível;
-13. SHA256;
-14. SBOM CycloneDX;
-15. dry-run real do instalador;
-16. artifact de release;
-17. provenance attestation em release promovida para `main`.
+12. testes de segurança do instalador;
+13. build Linux amd64/arm64 reproduzível;
+14. SHA256;
+15. SBOM CycloneDX;
+16. dry-run real do instalador;
+17. artifact de release.
 
-O checkpoint standalone só deve ser registrado abaixo depois que esses jobs terminarem com sucesso.
+Dependências de GitHub Actions são referenciadas por commit SHA, e as ferramentas Go de supply chain também são pinadas.
 
 ## Release industrial standalone
 
@@ -128,14 +132,16 @@ O checkpoint standalone só deve ser registrado abaixo depois que esses jobs ter
 - Linux amd64/arm64 com `-trimpath` e metadados embutidos;
 - timestamp derivado do commit e pacotes reprodutíveis;
 - SHA256 + SBOM;
+- archive restrito a arquivos regulares/diretórios e uma única raiz;
 - configuração validada antes da troca;
+- backups de configuração com retenção limitada;
 - troca atômica de release;
 - readiness após restart;
 - rollback automático e rollback manual com health gate.
 
 ## Checkpoint standalone atual
 
-**Pendente:** preencher com o SHA do HEAD somente depois do workflow `Gateway CI` ficar integralmente verde. Não promover documentação para “software field-test-ready” antes disso.
+**Pendente:** registrar o SHA de código depois que `Gateway CI` ficar integralmente verde com estes gates. Não promover documentação para “software field-test-ready” antes disso.
 
 ## Gates físicos restantes para production validated
 
