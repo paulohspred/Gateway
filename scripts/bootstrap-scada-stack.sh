@@ -148,7 +148,9 @@ GOBIN="$TOOL_BIN" GOTOOLCHAIN=auto go install github.com/CycloneDX/cyclonedx-gom
 )
 
 [[ -x "$KIT_DIR/install-scada-stack.sh" ]] || die "build não gerou install-scada-stack.sh" 4
-[[ -f "$KIT_DIR/rc-gateway_${GATEWAY_REF:0:0}" || true ]] >/dev/null 2>&1 || true
+mapfile -t built_gateway_archives < <(find "$KIT_DIR" -maxdepth 1 -type f -name "rc-gateway_*_linux_${ARCH}.tar.gz" -print)
+[[ ${#built_gateway_archives[@]} -eq 1 ]] || die "build deveria gerar exatamente um archive Gateway para $ARCH" 4
+[[ -f "${built_gateway_archives[0]}.sha256" ]] || die "build não gerou checksum do Gateway" 4
 
 log "validando kit completo antes de qualquer instalação"
 install_args=(--dir "$KIT_DIR" --rapid-version "$RAPID_VERSION")
