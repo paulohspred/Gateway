@@ -38,14 +38,14 @@ func main() {
 		os.Exit(2)
 	}
 	if *checkConfig {
-		fmt.Printf("configuration OK: nodeId=%s tunnels=%d udpTunnels=%d serialProviders=%d canProviders=%d\n", cfg.NodeID, len(cfg.Tunnels), len(cfg.UDPTunnels), len(cfg.SerialProviders), len(cfg.CANProviders))
+		fmt.Printf("configuration OK: nodeId=%s tunnels=%d udpTunnels=%d serialProviders=%d usbHidProviders=%d canProviders=%d\n", cfg.NodeID, len(cfg.Tunnels), len(cfg.UDPTunnels), len(cfg.SerialProviders), len(cfg.USBHIDProviders), len(cfg.CANProviders))
 		return
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	logger.Info("gateway starting", "nodeId", cfg.NodeID, "version", version, "commit", commit, "tunnels", len(cfg.Tunnels), "mode", "bridge-first")
+	logger.Info("gateway starting", "nodeId", cfg.NodeID, "version", version, "commit", commit, "tunnels", len(cfg.Tunnels), "udpTunnels", len(cfg.UDPTunnels), "serialProviders", len(cfg.SerialProviders), "usbHidProviders", len(cfg.USBHIDProviders), "canProviders", len(cfg.CANProviders), "mode", "bridge-first")
 	if err := gateway.New(cfg, logger).Run(ctx); err != nil {
 		logger.Error("gateway stopped with error", "error", err)
 		os.Exit(1)
