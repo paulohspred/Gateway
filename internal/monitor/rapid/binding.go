@@ -54,16 +54,16 @@ func LoadBinding(path string, bundle profile.Bundle) (BindingFile, error) {
 
 func (b BindingFile) Validate(bundle profile.Bundle) error {
 	if b.Schema != BindingSchemaVersion {
-		return fmt.Errorf("Rapid binding schema must be %d, got %d", BindingSchemaVersion, b.Schema)
+		return fmt.Errorf("rapid binding schema must be %d, got %d", BindingSchemaVersion, b.Schema)
 	}
 	if err := bundle.Validate(); err != nil {
 		return fmt.Errorf("profile bundle invalid: %w", err)
 	}
 	if b.ProfileID != bundle.Manifest.ID {
-		return fmt.Errorf("Rapid binding profileId %q does not match manifest %q", b.ProfileID, bundle.Manifest.ID)
+		return fmt.Errorf("rapid binding profileId %q does not match manifest %q", b.ProfileID, bundle.Manifest.ID)
 	}
 	if len(b.Metrics) == 0 {
-		return errors.New("Rapid binding must contain at least one metric")
+		return errors.New("rapid binding must contain at least one metric")
 	}
 
 	definitions := metricDefinitions(bundle)
@@ -71,10 +71,10 @@ func (b BindingFile) Validate(bundle profile.Bundle) error {
 	for _, binding := range b.Metrics {
 		definition, ok := definitions[binding.Key]
 		if !ok {
-			return fmt.Errorf("Rapid binding references undefined metric %q", binding.Key)
+			return fmt.Errorf("rapid binding references undefined metric %q", binding.Key)
 		}
 		if _, ok := seen[binding.Key]; ok {
-			return fmt.Errorf("duplicate Rapid binding metric %q", binding.Key)
+			return fmt.Errorf("duplicate rapid binding metric %q", binding.Key)
 		}
 		seen[binding.Key] = struct{}{}
 		if binding.ChannelNumber <= 0 {
@@ -87,7 +87,7 @@ func (b BindingFile) Validate(bundle profile.Bundle) error {
 	for _, definition := range bundle.Telemetry.Metrics {
 		if definition.Required {
 			if _, ok := seen[definition.Key]; !ok {
-				return fmt.Errorf("required metric %q has no Rapid channel binding", definition.Key)
+				return fmt.Errorf("required metric %q has no rapid channel binding", definition.Key)
 			}
 		}
 	}
