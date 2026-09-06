@@ -64,7 +64,7 @@ feature/monitor-core
   deve permanecer draft
 ```
 
-O candidato de fechamento do backend foi montado primeiro em `tmp-backend-finish` a partir do antigo HEAD do PR #3 `4666b1defff80c54357881179d0cfa17f10be4f1`. A branch temporária deve ser usada apenas para montagem; o candidato só recebe status `DONE` depois de promovido para `feature/monitor-core` e aprovado por Gateway CI + CodeQL no mesmo HEAD.
+O candidato de fechamento do backend foi montado primeiro em `tmp-backend-finish` a partir do antigo HEAD do PR #3 `4666b1defff80c54357881179d0cfa17f10be4f1`. A branch temporária é usada apenas para montagem/correção antes de fast-forward para `feature/monitor-core`.
 
 ## 4. Gateway + Rapid SCADA comprovados
 
@@ -160,7 +160,18 @@ O candidato implementa:
 - validação de `Alarm`, `Event` e `ProviderHealth` na fronteira `Service`;
 - catálogo clean-room de 9 famílias continua `draft`, `remoteControl=false`.
 
-MON-005 permanece `IN_PROGRESS` até o candidato promovido passar Gateway CI + CodeQL no mesmo HEAD.
+Evidência do primeiro candidato promovido:
+
+```text
+HEAD e2f752b39e004b43521b33c6dbb7cd7614ee0958
+CodeQL #68: SUCCESS
+Gateway CI #141: FAIL somente no gate Format
+  arquivo: internal/monitor/model.go
+  canonical project state: SUCCESS
+  workflow lint: SUCCESS
+```
+
+A formatação apontada foi corrigida em `3873e9f09e45efed749cbec42d3136afdf10fa76`. MON-005 permanece `IN_PROGRESS` até o novo HEAD passar Gateway CI + CodeQL.
 
 ## 9. MON-006 — candidato completo, aguardando gates
 
@@ -250,8 +261,8 @@ implemented
 | MON-002 | DONE | API read-only `/api/v1`. |
 | MON-003 | DONE | Controller Profiles schema/loader/profile sintético. |
 | MON-004 | DONE | RapidScadaProvider + metric binding; CI #131 + CodeQL #58 PASS. |
-| MON-005 | IN_PROGRESS | Candidato Rapid Web + alarm/event binding + E2E; aguarda CI/CodeQL no HEAD promovido. |
-| MON-006 | IN_PROGRESS | Candidato hardening/systemd/release/observabilidade; aguarda CI/CodeQL. |
+| MON-005 | IN_PROGRESS | Candidato Rapid Web + alarm/event binding + E2E; formatação corrigida, aguarda novo CI/CodeQL. |
+| MON-006 | IN_PROGRESS | Candidato hardening/systemd/release/observabilidade; aguarda novo CI/CodeQL. |
 | MON-007 | NEXT | Restart/recovery/soak próprios do processo rc-monitor. |
 | HIL-001 | BLOCKED | HIL read-only primeira controladora real. |
 | HIL-002 | BLOCKED | HIL modem/VPN/meio físico. |
@@ -268,11 +279,12 @@ implemented
 ## 14. Próximo passo exato
 
 ```text
-1. promover tmp-backend-finish por fast-forward para feature/monitor-core;
-2. observar Gateway CI + CodeQL do novo HEAD;
-3. corrigir qualquer gate no próprio feature/monitor-core ou via branch temporária sem tocar na VM;
-4. quando ambos verdes no mesmo HEAD, marcar MON-005/MON-006 DONE e MON-007 IN_PROGRESS/NEXT no handoff;
-5. manter SOAK-001 intocado até o fim e só depois executar SEM-001/VM do rc-monitor.
+1. fast-forward feature/monitor-core para o novo HEAD da tmp-backend-finish;
+2. observar Gateway CI + CodeQL;
+3. corrigir o próximo gate sem tocar na VM;
+4. quando ambos verdes no mesmo HEAD, marcar MON-005/MON-006 DONE;
+5. executar MON-007 em software antes de considerar o backend encerrado;
+6. manter SOAK-001 intocado até o fim e só depois executar SEM-001/VM do rc-monitor.
 ```
 
 ## 15. Proibições atuais
