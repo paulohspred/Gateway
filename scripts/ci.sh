@@ -31,10 +31,17 @@ go test ./... -shuffle=on -count=1 -coverprofile=coverage.out
 bash scripts/check-coverage.sh coverage.out
 go test -race ./... -count=1
 go build -trimpath ./cmd/rc-gateway
+go build -trimpath ./cmd/rc-monitor
+./rc-monitor --version
 
 for cfg in configs/*.json; do
   ./rc-gateway --check-config --config "$cfg"
 done
+for cfg in configs/monitor/*.json; do
+  ./rc-monitor --check-config --config "$cfg"
+done
 
-rm -f rc-gateway coverage.out
-echo "Gateway CI local OK"
+bash -n scripts/*.sh
+
+rm -f rc-gateway rc-monitor coverage.out
+echo "Gateway + RC Monitor CI local OK"

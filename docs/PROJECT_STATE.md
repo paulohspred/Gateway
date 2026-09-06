@@ -1,249 +1,167 @@
-# RC Universal Gateway — Canonical Project State
+# RC Gateway / Generator Platform — Estado Canônico e Handoff
 
-> Read this file before changing runtime, security, release or transport contracts. Material changes must keep this handoff accurate.
+<!-- PROJECT_STATE_SCHEMA: 2 -->
+<!-- CANONICAL_HANDOFF: true -->
+<!-- CURRENT_CODE_BRANCH: feature/monitor-core -->
+<!-- CURRENT_DEVELOPMENT_TASK: UI-001 -->
+<!-- EXTERNAL_RUNNING_GATE: SOAK-001 -->
+<!-- PRODUCTION_VALIDATED: false -->
+<!-- PR2_MUST_REMAIN_DRAFT: true -->
 
-## Product decision
+Este arquivo é o handoff canônico. Mudança material exige atualização posterior deste arquivo e `scripts/check-project-state-updated.sh` verde.
+
+## Arquitetura fixa
 
 ```text
 BRIDGE FIRST
 PROTOCOL OPTIONAL
 NO DEVICE MEMORY DATABASE
 NO TELEMETRY HISTORIAN
+
+campo -> RC GATEWAY (transporte)
+      -> RAPID SCADA 6 (protocolo, registradores, polling, qualidade, histórico)
+      -> RC MONITOR (domínio, API, segurança)
+      -> FRONTEND
 ```
 
-RC Universal Gateway transports bytes, datagrams, frames and HID reports between field equipment and the software that understands the application protocol. It does not silently invent register maps, convert proprietary protocols, authorize industrial writes or act as a historian/broker/SCADA.
+Regras: Gateway não contém register maps; RC Monitor recebe canais Rapid, nunca endereços Modbus físicos; zero real permanece zero; dado indefinido permanece ausente; nenhuma escrita industrial nesta fase.
 
-Current product focus: a generator SCADA acquisition stack using **RC Gateway + Rapid SCADA v6.4.7**. Backend and frontend owned by this project remain a later phase.
+## Continuidade / branches
 
-## Repository and product identity
+- `hardening/standalone-10x` -> PR #2 -> `main`: deve permanecer draft/not-merged.
+- `feature/monitor-core` -> PR #3 -> `hardening/standalone-10x`: deve permanecer draft.
+- não alterar `main` nem mesclar PR #2/#3 sem ordem explícita do proprietário;
+- `tmp-backend-finish` é somente branch de montagem/correção para fast-forward do PR #3;
+- não tocar na VM durante `SOAK-001`.
 
-Repository: `github.com/paulohspred/Gateway`.
+Rapid baseline: **6.4.7**, source analisado `1fd36080c7830303f921672fdaee335a06e7ae50`.
 
-Canonical pre-v1 runtime identity:
+## SOAK-001
 
 ```text
-binary:   rc-gateway
-service:  rc-gateway.service
-root:     /opt/rc-gateway
-config:   /etc/rc-gateway.json
-runtime:  /run/rc-gateway
+inicio: 2026-09-05T23:47:29Z
+intervalo: 30 s
+duração: 86400 s
+fim esperado: 2026-09-06T23:47:29Z
 ```
 
-The old `rc-gateway-umbrella` identity is not part of the canonical release. The installer detects a legacy installation and requires explicit migration instead of taking it over silently.
+Para DONE: `result=PASS` e todos os contadores `bad_*`, restart/session-id changes e counter regressions iguais a zero; depois repetir production preflight non-root com `DISRUPTIVE=0`.
 
-## License
+## Política de controladoras
 
-Original RC Universal Gateway material is proprietary, **All Rights Reserved**. The controlling terms are in `LICENSE`; `NOTICE` makes explicit that public source visibility does not grant permission to use, execute, copy for reuse, modify, distribute, deploy, train models on, or create derivatives from the original project without prior written permission.
+GenMon é referência funcional/factual GPLv2, não fonte para copiar código/JSON ao repositório proprietário. `controllers/DRAFT_PROFILES.json` contém vocabulário RC clean-room para ComAp, DSE, SmartGen, MEBAY, Kohler, Basler, PowerZone, Briggs e Generac, todos `draft` e read-only. Endereços/FC/encoding reais ficam no Rapid SCADA e só são promovidos com documentação permitida e/ou HIL.
 
-Third-party software is not relicensed by those proprietary terms. Required notices are in `THIRD_PARTY_NOTICES.md`, and release artifacts contain a CycloneDX SBOM.
-
-Rapid SCADA remains an external third-party product under its own license. The Gateway release and the new stack installer do not embed Rapid SCADA source or binaries; the operator supplies the official Linux package separately.
-
-## Implemented transport plane
-
-- TCP listen/connect and reverse-TCP modem paths;
-- TLS 1.3 and mTLS;
-- Unix stream sockets;
-- Unix `SOCK_SEQPACKET` (`unixpacket`);
-- RS232/RS422/RS485 raw serial provider;
-- UDP with peer sessions, idle expiry and bounded session/datagram limits;
-- SocketCAN classic and CAN-FD with packet preservation;
-- Linux USB HID via `/dev/hidrawN`;
-- USB HID stable discovery by VID/PID with optional serial, fail-closed ambiguity handling and re-resolution after re-enumeration;
-- explicit `length32be` framing when packet transports cross a stream boundary;
-- bounded stream concurrency with global and per-tunnel pair limits;
-- pair timeout, write timeout, half-close drain, TCP keepalive/NODELAY and CIDR allowlists.
-
-Transport support is not semantic protocol conversion. Modbus TCP, Modbus RTU/ASCII over appropriate transports, MQTT, OPC UA, IEC-104, DNP3 and proprietary TCP protocols can pass transparently when the endpoints understand them. J1939/CANopen and ComAp Direct remain application-layer responsibilities.
-
-## Security invariants
-
-- admin HTTP is loopback-only in this release;
-- command plane is disabled and `commandPlaneEnabled=true` is rejected;
-- non-loopback TCP/UDP listeners require `allowedCidrs`;
-- TLS options are fail-closed; mTLS listeners require CA material;
-- CAN transmit defaults to disabled;
-- USB HID write defaults to disabled;
-- provider paths/sockets are canonicalized and cannot overwrite ordinary files;
-- HID explicit paths reject symlinks and non-character devices;
-- HID identity selectors must resolve unambiguously and must agree with an explicit path when both are configured;
-- serial provider sockets use Unix stream; HID/CAN provider sockets use `unixpacket`;
-- packet↔stream transitions require explicit framing and never silently discard message boundaries;
-- configuration uses strict JSON and a single file snapshot in `LoadStrict`;
-- active stream pairs and UDP sessions are bounded;
-- release archives reject path traversal, links and special entries;
-- installation validates the candidate config before activation and rolls back when readiness fails.
-
-## Runtime health and observability
-
-Local GET-only admin endpoints exist at both legacy and `/v1` aliases where implemented:
+## Backend aprovado
 
 ```text
-/healthz   /v1/healthz
-/readyz    /v1/readyz
-/status    /v1/status
-/sessions  /v1/sessions
-/metrics   /v1/metrics
+MON-001 DONE  fd73a495...  Gateway CI #122 / CodeQL #49 SUCCESS
+MON-002 DONE  9bc9689c...  Gateway CI #126 / CodeQL #53 SUCCESS
+MON-003 DONE  46f50c2b...  Gateway CI #128 / CodeQL #55 SUCCESS
+MON-004 DONE  b509a382...  Gateway CI #131 / CodeQL #58 SUCCESS
+
+MON-005 DONE + MON-006 DONE
+  HEAD: 67a0776565410e2513f44bab98185f774607c6ed
+  Gateway CI #144: SUCCESS
+  CodeQL #71: SUCCESS
+
+MON-007 DONE (software)
+  HEAD: b49d287cdad630abbd10461d10632d936d679096
+  Gateway CI #146: SUCCESS
+  CodeQL #73: SUCCESS
+  RC Monitor Rapid outage and recovery: SUCCESS
+  RC Monitor process restart lifecycle, 20 ciclos: SUCCESS
 ```
 
-Readiness means configured local runtime components initialized successfully; it does not mean a remote controller completed its application-protocol handshake.
+MON-005 inclui Rapid Web API, semântica de métricas/alarmes/eventos, E2E, outage/recovery e mini-soak. MON-006 inclui config estrita, secrets por env, observabilidade local, systemd non-root, installer e release reprodutível. MON-007 prova lifecycle do binário real, graceful SIGTERM/restart, recovery Rapid e mini-soak em software.
 
-The systemd unit uses `Type=notify`, readiness notification and watchdog operation. Linux `NOTIFY_SOCKET` pathname and abstract-namespace forms are supported. Watchdog timing is derived directly from `WATCHDOG_USEC` and is process-scoped when `WATCHDOG_PID` is provided.
+A validação systemd/VM do `rc-monitor` permanece externa e só pode começar depois de `SOAK-001` liberar o host.
 
-## Automated quality and supply-chain gates
+## HARD-001 — DONE
 
-The exact candidate commit must pass:
-
-1. canonical-state consistency gate;
-2. GitHub Actions workflow lint (`actionlint`);
-3. `gofmt`;
-4. `go mod verify` plus tidy-diff check;
-5. `go vet`;
-6. Staticcheck;
-7. shuffled unit/integration tests with coverage;
-8. explicit Rapid SCADA Modbus transport contract tests;
-9. minimum total coverage threshold;
-10. race detector;
-11. build and validation of every `configs/*.json` example;
-12. real-socket parallel/concurrency tests plus 1,000-pair stress;
-13. 1,000 TCP churn cycles and leak gate;
-14. impairment and mini-soak gate;
-15. `govulncheck`;
-16. CodeQL Go analysis;
-17. shell syntax and malicious installer-archive tests;
-18. deterministic/reproducible Linux amd64 and arm64 release builds;
-19. SHA256 checksums and CycloneDX SBOM;
-20. Gateway installer dry-run against the real release archive;
-21. Gateway + Rapid SCADA stack-installer positive dry-run and negative tests for wrong Rapid version, wrong Debian package identity, ambiguous Rapid package sets and bad Gateway checksum;
-22. artifact content checks, including proprietary/third-party notices, Rapid SCADA production-readiness tooling and the standalone stack deployment kit;
-23. provenance attestation workflow for versioned releases.
-
-Third-party GitHub Actions are pinned to immutable commit SHAs. Dependabot is configured to propose Go-module and GitHub Actions updates; updates still require the full validation chain.
-
-## Rapid SCADA v6 integration contract
-
-Rapid SCADA is an external consumer, not part of the Gateway core and not bundled into the proprietary Gateway artifact. Compatibility was reviewed against Rapid SCADA **v6.4.7**, `RapidScada/scada-v6` `master` commit `1fd36080c7830303f921672fdaee335a06e7ae50`.
-
-The supported native integration uses Rapid SCADA `DrvCnlBasic` as `TcpClient` and lets the Rapid SCADA application driver interpret the payload. For Modbus, `DrvModbus` supports `TransMode=RTU`, `ASCII` and `TCP`.
-
-Canonical mapping:
-
-- native Modbus TCP delivered by the Gateway -> Rapid SCADA `TransMode=TCP`;
-- Modbus RTU raw encapsulated in TCP -> Rapid SCADA `TransMode=RTU`;
-- Modbus ASCII raw encapsulated in TCP -> Rapid SCADA `TransMode=ASCII`.
-
-For one Gateway tunnel, especially a single RS485 multidrop bus, `ConnectionMode=Shared` is the recommended Rapid SCADA channel mode. Multiple Modbus slave IDs belong to the same Rapid SCADA communication line and are not modeled inside the Gateway.
-
-Repository integration assets:
-
-- `docs/RAPID_SCADA_INTEGRATION.md`;
-- `docs/GENERATOR_SCADA_PRODUCTION_READINESS.md`;
-- `docs/SCADA_STACK_INSTALLER.md`;
-- `configs/rapid-scada.modbus-tcp.example.json`;
-- `configs/rapid-scada.rtu-over-tcp.example.json`;
-- `configs/rapid-scada.rs485-multidrop.example.json`;
-- `configs/scada-stack.safe.example.json`;
-- `internal/bridge/rapid_scada_test.go`;
-- `scripts/rapid-scada-acceptance.sh`;
-- `scripts/rapid-scada-production-acceptance.sh`;
-- `scripts/install-scada-stack.sh`;
-- `scripts/test-scada-stack-installer.sh`.
-
-The dedicated software contract covers Modbus TCP read/write/exception frames, Modbus RTU CRC preservation, five Unit IDs on one shared stream, TCP fragmentation/coalescing and 1,000 sustained polling cycles. These tests prove byte-stream behavior; they do not claim a semantic Modbus implementation inside the Gateway.
-
-The upstream Rapid SCADA `scadacomm6.service` baseline has `Type=notify`/`Restart=always` and no explicit `User=`. Non-root hardening must be tested with the real installation before it can become a production invariant; the production preflight can require this using `RAPID_SCADA_REQUIRE_NON_ROOT=1`.
-
-The upstream Rapid SCADA v6.4.7 Webstation unit starts with `--urls=http://0.0.0.0:10008`. The stack installer intentionally overrides that service to `127.0.0.1:10008` and configures Nginx on `127.0.0.1:80` only. This prevents accidental remote exposure before Rapid SCADA credentials and the final TLS/reverse-proxy policy are configured.
-
-## One-directory stack installer contract
-
-The standalone deployment kit is designed for a clean Ubuntu Server 24.04 VM. The CI artifact contains both Gateway architecture archives, their checksums, `install-scada-stack.sh`, `rc-gateway.safe.json` and `SCADA_STACK_INSTALLER.md`. Rapid SCADA itself remains separate; the operator places exactly one official `rapidscada_*_all.deb` or supported Linux ZIP in the same directory.
-
-Running:
-
-```bash
-sudo bash install-scada-stack.sh
-```
-
-performs fail-closed artifact selection, Gateway SHA256 verification, archive-type/path validation, embedded Gateway installer dry-run, Rapid Debian package identity/version/architecture validation, dependency installation from already-configured APT repositories, ASP.NET Core Runtime 8 detection/installation, Rapid SCADA installation, safe loopback Webstation/Nginx configuration, Gateway health-gated installation, systemd enablement and post-install health checks.
-
-If no `rc-gateway.json` is present, the installer uses the safe zero-tunnel baseline. It does not invent a controller topology or expose a field listener automatically.
-
-The stack installer records installed versions and source hashes in `/var/lib/rc-scada-stack/install-state.env`. A Rapid package checksum may be supplied as a sibling `.sha256` or pinned with `RC_SCADA_RAPID_SHA256`; absence is warned because a local hash alone is not publisher authenticity evidence.
-
-The installer targets fresh deployment by default. Existing Gateway/Rapid installations require explicit `--upgrade` after backup and an authorized maintenance window. Existing non-default Nginx sites are not overwritten unless the operator explicitly allows that condition.
-
-## Configuration compatibility
-
-Current canonical pre-v1 schema: `schema: 3`.
-
-The policy is documented in `CONFIGURATION_COMPATIBILITY.md`. Before v1, incompatible experimental changes must be explicit. After v1, incompatible configuration semantics require an explicit schema change and migration path. Security-sensitive configuration is never silently guessed or reinterpreted.
-
-## Release contract
-
-Canonical Gateway artifacts are named:
+Hardening non-root do `scadacomm6` foi codificado no installer e validado no mesmo HEAD de código:
 
 ```text
-rc-gateway_<version>_linux_amd64.tar.gz
-rc-gateway_<version>_linux_arm64.tar.gz
+HEAD: 540ae8a60f331a57a86c5eb7429c14e27d08f4fd
+Gateway CI #148: SUCCESS
+CodeQL #75: SUCCESS
+Gateway and Rapid SCADA stack installer contract: SUCCESS
+Reproducible release build: SUCCESS
+Validate release archive and installer dry-run: SUCCESS
 ```
 
-A Gateway release includes the binary, validated examples, systemd unit, install/rollback/diagnostic/VM scripts, Rapid SCADA acceptance/preflight/stack-installer tooling, generator-SCADA readiness documentation, operational documentation, `LICENSE`, `NOTICE`, `THIRD_PARTY_NOTICES.md`, `MANIFEST`, `VERSION` and SBOM. The manifest identifies `product=rc-gateway` and `license=Proprietary-All-Rights-Reserved`.
+Implementação:
 
-The CI artifact also publishes top-level deployment-kit files:
+- usuário/grupo de sistema dedicado `scadacomm`, criado de forma idempotente;
+- drop-in de `scadacomm6.service` com `User=scadacomm`, `Group=scadacomm`, `NoNewPrivileges=true`, `PrivateTmp=true`, `ProtectHome=true`, capability sets vazios e `UMask=0027`;
+- árvore `/opt/scada` permanece sob ownership do pacote/root; o installer não executa `chown -R /opt/scada`;
+- `ScadaInstanceConfig.xml` usa `/var/log/scada` como raiz de logs;
+- somente `/var/log/scada/ScadaComm/Log` recebe escrita pelo usuário dedicado;
+- após restart, o installer verifica serviço ativo, usuário efetivo `scadacomm`, leitura do worker/config e escrita no diretório de log;
+- o teste de contrato exige as diretivas de hardening e rejeita ownership recursivo da árvore Rapid.
+
+Base técnica Rapid 6.4.7: `CommDirs` exige `Lang`, `Log` e `Drv`; `Manager` carrega `ScadaInstanceConfig.xml` e aplica `LogDir`; a documentação Linux upstream define `/var/log/scada` para logs. Não foi identificada necessidade de tornar `/opt/scada` gravável pelo Communicator.
+
+A validação prática da nova automação no host real será repetida somente após `SOAK-001`; o comportamento non-root equivalente já foi comprovado manualmente em VM em `VM-006`/`VM-007`.
+
+## API read-only
 
 ```text
-install-scada-stack.sh
-rc-gateway.safe.json
-SCADA_STACK_INSTALLER.md
+GET /healthz
+GET /readyz
+GET /metrics
+GET /api/v1/system/health
+GET /api/v1/generators
+GET /api/v1/generators/{id}
+GET /api/v1/generators/{id}/telemetry
+GET /api/v1/generators/{id}/alarms
+GET /api/v1/generators/{id}/events
 ```
 
-Rapid SCADA is intentionally not embedded in those Gateway artifacts. Version-tag builds can be provenance-attested through GitHub OIDC. SHA256 is an integrity checksum; provenance/attestation is the publisher/build-chain evidence.
+## Checklist canônico
 
-## Current validation checkpoint
+<!-- CHECKLIST_START -->
+| ID | Status | Critério |
+|---|---|---|
+| GW-001 | DONE | Gateway bridge-first. |
+| GW-002 | DONE | Rapid transport comprovado. |
+| GW-003 | DONE | Firewall Rapid validado. |
+| VM-001 | DONE | Stack instalada/validada. |
+| VM-002 | DONE | Rapid -> Gateway -> simulador comprovado. |
+| VM-003 | DONE | Field outage/recovery. |
+| VM-004 | DONE | Blackhole/recovery. |
+| VM-005 | DONE | Cold boot. |
+| VM-006 | DONE | ScadaComm non-root. |
+| VM-007 | DONE | Cold boot pós-non-root. |
+| HARD-001 | DONE | Installer ScadaComm non-root least-privilege; CI #148 + CodeQL #75. |
+| SOAK-001 | IN_PROGRESS | Soak 24 h da VM. |
+| SEM-001 | TODO | Binding semântico com canais Rapid reais. |
+| MON-001 | DONE | Foundation. |
+| MON-002 | DONE | API read-only. |
+| MON-003 | DONE | Profiles. |
+| MON-004 | DONE | RapidScadaProvider. |
+| MON-005 | DONE | Rapid Web + semântica + E2E; CI #144 + CodeQL #71. |
+| MON-006 | DONE | Hardening/release/observabilidade; CI #144 + CodeQL #71. |
+| MON-007 | DONE | Restart/recovery/mini-soak software; CI #146 + CodeQL #73. |
+| HIL-001 | BLOCKED | Primeira controladora real read-only. |
+| HIL-002 | BLOCKED | Modem/VPN/meio físico. |
+| CMD-001 | DEFERRED | Writes só após HIL/interlocks/auditoria. |
+| UI-001 | NEXT | Congelar contrato frontend após hardening operacional. |
+| UI-002 | TODO | Shell visual. |
+| UI-003 | TODO | Telas + API real. |
+| UI-004 | TODO | Testes frontend. |
+| REL-001 | TODO | Confirmar proteção de main. |
+| REL-002 | DONE | Release inclui rc-monitor e passou gate reprodutível/dry-run. |
+| PROD-001 | BLOCKED | Exige SEM + HIL + soak + aprovação. |
+<!-- CHECKLIST_END -->
 
-The previous exact HEAD `fceb0982d29b3fd5f942238d8a5f2e1d327331bd` passed Gateway CI `33987179973` and CodeQL `33987179972` and was `software_field_test_ready` for the Gateway + Rapid SCADA transport contract.
-
-The new one-directory stack-installer increment must pass the complete CI and CodeQL chain on its own exact HEAD before it inherits that status. Repository-only tests validate packaging and dry-run behavior; the real Rapid SCADA `.deb`, systemd services, Nginx override and ASP.NET runtime still require the clean-VM acceptance run.
-
-## Current promotion rule
+## Próximo passo exato
 
 ```text
-implemented
-  -> software_validated
-  -> software_field_test_ready
-  -> vm_accepted
-  -> hil_accepted
-  -> soak_accepted
-  -> production_validated
+1. manter a VM intocada enquanto SOAK-001 estiver em execução;
+2. UI-001 é a próxima tarefa software-only: congelar contrato frontend sobre a API read-only existente;
+3. após SOAK-001, validar o installer/hardening no host real com preflight non-disruptive;
+4. executar SEM-001 com canais Rapid reais;
+5. HIL-001/HIL-002 continuam bloqueados até hardware/meio físico disponível e aprovado.
 ```
 
-No state is inferred from an older successful commit. `software_field_test_ready` requires all automated gates to be green for the exact HEAD being promoted.
-
-## Remaining gates that cannot be completed by repository-only automation
-
-### Repository-owner administration
-
-The `main` branch protection/ruleset must be confirmed by the repository owner according to `GITHUB_PROTECTION.md` before treating `main` as protected production history. The connected integration can verify some repository state but cannot write administrative branch-protection settings.
-
-Because the repository is public, third parties can technically read/clone the source even though the proprietary license grants no permission to reuse it. If the requirement is to prevent source access rather than merely prohibit licensed use, the repository owner must change visibility to private.
-
-### VM acceptance
-
-Install the exact CI/release artifact on a clean Ubuntu Server 24.04 amd64 VM. The preferred initial path is now the one-directory stack installer, followed by `VM_ACCEPTANCE.md` / `scripts/vm-acceptance.sh`.
-
-The VM acceptance must prove the actual Rapid SCADA v6.4.7 package installation, ASP.NET Core Runtime 8, `scadaagent6`, `scadaserver6`, `scadacomm6`, `scadaweb6`, Nginx, Gateway service, loopback-only Webstation exposure, reboot persistence and the stack state record.
-
-After configuring a real Rapid communication line, execute both `scripts/rapid-scada-acceptance.sh` and `scripts/rapid-scada-production-acceptance.sh`. The production preflight requires explicit consumer ports, checks loopback exposure, time synchronization, disk headroom, restart counters and real session recovery. Disruptive restart testing is opt-in and must run only in an authorized VM/window.
-
-### Hardware-in-the-loop
-
-Production claims remain matrix-specific and require real equipment for the claimed path: PUSR/USR/Teltonika or equivalent modem, MikroTik/VPN/4G, RS232/422/485 including multidrop/half-duplex, USB HID/ComAp InteliLite 4 AMF 9, UDP where used, CAN/CAN-FD, power-cycle/reconnect and consumer/Gateway restarts.
-
-For generator projects, the initial commissioning gate is read-oriented. Start/stop, transfer, reset and setpoint writes must be enabled only after model/firmware-specific HIL, interlock review, authorization and audit behavior are proven in the SCADA layer.
-
-For ComAp USB, HIL must confirm actual Linux enumeration, VID/PID/serial, HID report descriptor/report sizes and the application protocol. Do not claim automatic ComAp Direct↔Modbus conversion.
-
-## Merge rule
-
-PR #2 remains draft and must not be merged into `main` merely because code exists. Keep it draft until the exact candidate is green and the owner is ready for the VM/HIL acceptance sequence. Production validation is recorded only for the hardware/network/consumer combinations actually tested.
+`PRODUCTION_VALIDATED=false`.

@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "profileId": "rc-simulator.reference-controller",
+  "alarms": [
+    {
+      "code": "LOW_OIL_PRESSURE",
+      "severity": "critical",
+      "message": "Oil pressure below configured safe threshold"
+    }
+  ]
+}

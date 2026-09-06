@@ -1,0 +1,38 @@
+{
+  "schema": 1,
+  "profileId": "rc-simulator.reference-controller",
+  "sections": [
+    {
+      "id": "engine",
+      "title": "Engine",
+      "metrics": [
+        "engine.rpm",
+        "engine.oil_pressure",
+        "engine.coolant_temperature",
+        "engine.run_hours",
+        "fuel.level"
+      ]
+    },
+    {
+      "id": "generator",
+      "title": "Generator",
+      "metrics": [
+        "generator.voltage_l1",
+        "generator.voltage_l2",
+        "generator.voltage_l3",
+        "generator.frequency",
+        "generator.power_kw",
+        "generator.power_factor"
+      ]
+    },
+    {
+      "id": "controller",
+      "title": "Controller",
+      "metrics": [
+        "battery.voltage",
+        "controller.mode",
+        "breaker.gcb"
+      ]
+    }
+  ]
+}

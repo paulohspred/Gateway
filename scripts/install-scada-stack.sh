@@ -12,6 +12,12 @@ ALLOW_UNSUPPORTED_OS="${RC_SCADA_ALLOW_UNSUPPORTED_OS:-0}"
 RAPID_SHA256_EXPECTED="${RC_SCADA_RAPID_SHA256:-}"
 STATE_DIR="/var/lib/rc-scada-stack"
 WEB_OVERRIDE="/etc/systemd/system/scadaweb6.service.d/10-rc-scada-loopback.conf"
+SCADACOMM_USER="scadacomm"
+SCADACOMM_GROUP="scadacomm"
+SCADACOMM_OVERRIDE="/etc/systemd/system/scadacomm6.service.d/10-rc-scada-nonroot.conf"
+SCADA_INSTANCE_CONFIG="/opt/scada/ScadaInstanceConfig.xml"
+SCADACOMM_LOG_ROOT="/var/log/scada"
+SCADACOMM_LOG_DIR="/var/log/scada/ScadaComm/Log"
 NGINX_SITE="/etc/nginx/sites-available/rc-scada"
 NGINX_LINK="/etc/nginx/sites-enabled/rc-scada"
 FIREWALL_NFT="/etc/rc-scada-internal-firewall.nft"
@@ -268,6 +274,7 @@ fi
 [[ $EUID -eq 0 ]] || die "instalação exige root (use sudo)" 77
 check_supported_os
 command -v systemctl >/dev/null 2>&1 || die "systemctl ausente" 69
+command -v runuser >/dev/null 2>&1 || die "runuser ausente" 69
 [[ -d /run/systemd/system ]] || die "systemd não está ativo neste host" 69
 
 if [[ $ALLOW_UPGRADE -eq 0 ]]; then
@@ -325,6 +332,54 @@ fi
 for svc in scadaagent6.service scadaserver6.service scadacomm6.service scadaweb6.service; do
   systemctl cat "$svc" >/dev/null 2>&1 || die "unit Rapid SCADA ausente: $svc" 6
 done
+
+log "Aplicando hardening non-root do Rapid SCADA Communicator..."
+[[ -f "$SCADA_INSTANCE_CONFIG" ]] || die "configuração da instância Rapid ausente: $SCADA_INSTANCE_CONFIG" 6
+[[ -r /opt/scada/ScadaComm/ScadaCommWkr.dll ]] || die "ScadaCommWkr.dll ausente ou ilegível" 6
+logdir_matches="$(grep -c '<LogDir>[^<]*</LogDir>' "$SCADA_INSTANCE_CONFIG" || true)"
+[[ "$logdir_matches" == "1" ]] || die "ScadaInstanceConfig.xml deve conter exatamente um elemento LogDir simples" 6
+install -d -o root -g root -m 0750 "$STATE_DIR"
+current_log_root="$(sed -n 's#.*<LogDir>\([^<]*\)</LogDir>.*#\1#p' "$SCADA_INSTANCE_CONFIG")"
+if [[ "$current_log_root" != "$SCADACOMM_LOG_ROOT" ]]; then
+  backup="$STATE_DIR/ScadaInstanceConfig.before-scadacomm-nonroot.xml"
+  if [[ ! -f "$backup" ]]; then
+    cp --preserve=mode,ownership,timestamps "$SCADA_INSTANCE_CONFIG" "$backup"
+    chmod 0640 "$backup"
+  fi
+  config_tmp="$(mktemp "$tmp/ScadaInstanceConfig.XXXXXX")"
+  sed "s#<LogDir>[^<]*</LogDir>#<LogDir>${SCADACOMM_LOG_ROOT}</LogDir>#" "$SCADA_INSTANCE_CONFIG" > "$config_tmp"
+  grep -q "<LogDir>${SCADACOMM_LOG_ROOT}</LogDir>" "$config_tmp" || die "falha ao fixar LogDir do Rapid SCADA" 6
+  install -o root -g root -m 0644 "$config_tmp" "$SCADA_INSTANCE_CONFIG"
+fi
+
+getent group "$SCADACOMM_GROUP" >/dev/null || groupadd --system "$SCADACOMM_GROUP"
+if ! id "$SCADACOMM_USER" >/dev/null 2>&1; then
+  useradd --system --gid "$SCADACOMM_GROUP" --home-dir /nonexistent --shell /usr/sbin/nologin "$SCADACOMM_USER"
+fi
+primary_group="$(id -gn "$SCADACOMM_USER")"
+[[ "$primary_group" == "$SCADACOMM_GROUP" ]] || die "usuário $SCADACOMM_USER possui grupo primário inesperado: $primary_group" 6
+
+install -d -o root -g root -m 0755 "$SCADACOMM_LOG_ROOT" "$SCADACOMM_LOG_ROOT/ScadaComm"
+install -d -o "$SCADACOMM_USER" -g "$SCADACOMM_GROUP" -m 0750 "$SCADACOMM_LOG_DIR"
+runuser -u "$SCADACOMM_USER" -- test -r /opt/scada/ScadaComm/ScadaCommWkr.dll || die "scadacomm não consegue ler o worker" 6
+runuser -u "$SCADACOMM_USER" -- test -r "$SCADA_INSTANCE_CONFIG" || die "scadacomm não consegue ler ScadaInstanceConfig.xml" 6
+write_probe="$SCADACOMM_LOG_DIR/.rc-write-probe-$$"
+runuser -u "$SCADACOMM_USER" -- touch "$write_probe" || die "scadacomm não consegue escrever no diretório de log dedicado" 6
+rm -f "$write_probe"
+
+install -d -o root -g root -m 0755 "$(dirname "$SCADACOMM_OVERRIDE")"
+cat > "$SCADACOMM_OVERRIDE" <<'UNIT'
+[Service]
+User=scadacomm
+Group=scadacomm
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0027
+UNIT
+chmod 0644 "$SCADACOMM_OVERRIDE"
 
 log "Protegendo portas internas do Rapid SCADA (10000/10002)..."
 command -v nft >/dev/null 2>&1 || die "nftables não está disponível" 69
@@ -434,6 +489,13 @@ for svc in rc-gateway.service rc-scada-internal-firewall.service scadaagent6.ser
   wait_service "$svc" 60 || die "serviço não ficou ativo: $svc" 7
 done
 
+scadacomm_effective_user="$(systemctl show scadacomm6.service -p User --value)"
+[[ "$scadacomm_effective_user" == "$SCADACOMM_USER" ]] || die "scadacomm6 não está configurado como usuário dedicado" 7
+scadacomm_pid="$(systemctl show scadacomm6.service -p MainPID --value)"
+[[ "$scadacomm_pid" =~ ^[1-9][0-9]*$ ]] || die "PID principal inválido do scadacomm6: $scadacomm_pid" 7
+scadacomm_process_user="$(ps -o user= -p "$scadacomm_pid" | awk '{$1=$1; print}')"
+[[ "$scadacomm_process_user" == "$SCADACOMM_USER" ]] || die "processo scadacomm6 executa como $scadacomm_process_user, esperado $SCADACOMM_USER" 7
+
 curl -fsS --max-time 3 http://127.0.0.1:18080/readyz >/dev/null || die "Gateway não está ready após instalação" 7
 rapid_web_ok=0
 for ((i=1; i<=60; i++)); do
@@ -463,6 +525,9 @@ webstation_bind=127.0.0.1:10008
 nginx_bind=127.0.0.1:80
 rapid_internal_ports=10000,10002
 rapid_internal_firewall=nftables-loopback-only
+scadacomm_user=$SCADACOMM_USER
+scadacomm_log_dir=$SCADACOMM_LOG_DIR
+scadacomm_hardening=nonroot,no-new-privileges,private-tmp,protect-home,empty-capabilities,umask-0027
 EOFSTATE
 chmod 0640 "$STATE_DIR/install-state.env"
 
@@ -470,5 +535,6 @@ log "INSTALL OK: Gateway $GATEWAY_VERSION + Rapid SCADA $RAPID_VERSION"
 log "Gateway admin: http://127.0.0.1:18080"
 log "Rapid SCADA Web: http://127.0.0.1/ (loopback apenas)"
 log "Rapid SCADA 10000/10002: bloqueadas fora de loopback por nftables"
+log "Rapid SCADA Communicator: non-root como $SCADACOMM_USER; logs em $SCADACOMM_LOG_DIR"
 warn "O Rapid SCADA upstream usa credencial inicial documentada pelo fornecedor. Altere as credenciais antes de qualquer exposição de rede."
 warn "Nenhum tunnel de campo é criado automaticamente quando rc-gateway.json não é fornecido. Configure a linha/controladora e então execute os acceptance tests Rapid SCADA."

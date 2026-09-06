@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "profileId": "rc-simulator.reference-controller",
+  "metrics": [
+    {"key":"engine.rpm","channelNumber":101,"transform":{"kind":"number"}},
+    {"key":"engine.oil_pressure","channelNumber":102,"transform":{"kind":"number"}},
+    {"key":"engine.coolant_temperature","channelNumber":103,"transform":{"kind":"number"}},
+    {"key":"engine.run_hours","channelNumber":104,"transform":{"kind":"number"}},
+    {"key":"generator.voltage_l1","channelNumber":105,"transform":{"kind":"number"}},
+    {"key":"generator.voltage_l2","channelNumber":106,"transform":{"kind":"number"}},
+    {"key":"generator.voltage_l3","channelNumber":107,"transform":{"kind":"number"}},
+    {"key":"generator.frequency","channelNumber":108,"transform":{"kind":"number"}},
+    {"key":"generator.power_kw","channelNumber":109,"transform":{"kind":"number"}},
+    {"key":"generator.power_factor","channelNumber":110,"transform":{"kind":"number"}},
+    {"key":"battery.voltage","channelNumber":111,"transform":{"kind":"number"}},
+    {"key":"controller.mode","channelNumber":112,"transform":{"kind":"enum","enumValues":{"0":"off","1":"manual","2":"auto"}}},
+    {"key":"breaker.gcb","channelNumber":113,"transform":{"kind":"boolean","trueValues":[1],"falseValues":[0]}},
+    {"key":"fuel.level","channelNumber":114,"transform":{"kind":"number"}}
+  ],
+  "alarms": [
+    {"code":"LOW_OIL_PRESSURE","channelNumber":115,"active":{"kind":"equals","value":1}}
+  ],
+  "events": [
+    {"type":"controller.test_event","channelNumber":116,"condition":{"kind":"nonzero"},"message":"Synthetic controller event"}
+  ]
+}

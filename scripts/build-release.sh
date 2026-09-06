@@ -11,6 +11,8 @@ BUILD_DATE="${BUILD_DATE:-$(date -u -d "@$SOURCE_DATE_EPOCH" +%Y-%m-%dT%H:%M:%SZ
 ARCHES="${ARCHES:-amd64 arm64}"
 DIST_DIR="${DIST_DIR:-$ROOT_DIR/dist}"
 REQUIRE_SBOM="${REQUIRE_SBOM:-0}"
+HOST_GOOS="$(go env GOOS)"
+HOST_GOARCH="$(go env GOARCH)"
 
 for required in LICENSE NOTICE THIRD_PARTY_NOTICES.md; do
   [[ -f "$required" ]] || { echo "ERRO: arquivo legal obrigatório ausente: $required" >&2; exit 4; }
@@ -21,18 +23,34 @@ mkdir -p "$DIST_DIR"
 for arch in $ARCHES; do
   pkg="rc-gateway_${VERSION}_linux_${arch}"
   stage="$DIST_DIR/$pkg"
-  mkdir -p "$stage/bin" "$stage/systemd" "$stage/configs" "$stage/scripts" "$stage/docs"
-  ldflags="-s -w -X main.version=$VERSION -X main.commit=$COMMIT -X main.buildDate=$BUILD_DATE"
-  CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath -buildvcs=false -ldflags "$ldflags" -o "$stage/bin/rc-gateway" ./cmd/rc-gateway
-  cp systemd/rc-gateway.service "$stage/systemd/"
+  mkdir -p "$stage/bin" "$stage/systemd" "$stage/configs/monitor" "$stage/scripts" "$stage/docs" "$stage/controllers"
+
+  gateway_ldflags="-s -w -X main.version=$VERSION -X main.commit=$COMMIT -X main.buildDate=$BUILD_DATE"
+  monitor_ldflags="-s -w -X main.version=$VERSION"
+  CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath -buildvcs=false -ldflags "$gateway_ldflags" -o "$stage/bin/rc-gateway" ./cmd/rc-gateway
+  CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath -buildvcs=false -ldflags "$monitor_ldflags" -o "$stage/bin/rc-monitor" ./cmd/rc-monitor
+
+  cp systemd/rc-gateway.service systemd/rc-monitor.service "$stage/systemd/"
   cp configs/*.json "$stage/configs/"
-  cp scripts/install-release.sh scripts/install-scada-stack.sh scripts/rollback-release.sh scripts/probe-usb-hid.sh scripts/collect-diagnostics.sh scripts/vm-acceptance.sh scripts/run-soak.sh scripts/rapid-scada-acceptance.sh scripts/rapid-scada-production-acceptance.sh "$stage/scripts/"
-  cp docs/RUNBOOK.md docs/USB_HID_COMAP.md docs/COMPATIBILITY_MATRIX.md docs/PRODUCTION_MATRIX.md docs/VM_ACCEPTANCE.md docs/THREAT_MODEL.md docs/PROFESSIONALIZATION_PLAN.md docs/CONFIGURATION_COMPATIBILITY.md docs/RAPID_SCADA_INTEGRATION.md docs/GENERATOR_SCADA_PRODUCTION_READINESS.md docs/SCADA_STACK_INSTALLER.md "$stage/docs/"
+  cp configs/monitor/*.json "$stage/configs/monitor/"
+  cp controllers/DRAFT_PROFILES.json controllers/README.md controllers/REFERENCE_CATALOG.md "$stage/controllers/"
+  cp -R controllers/rc-simulator "$stage/controllers/"
+
+  cp scripts/install-release.sh scripts/install-scada-stack.sh scripts/install-rc-monitor.sh scripts/rollback-release.sh scripts/probe-usb-hid.sh scripts/collect-diagnostics.sh scripts/vm-acceptance.sh scripts/run-soak.sh scripts/rapid-scada-acceptance.sh scripts/rapid-scada-production-acceptance.sh "$stage/scripts/"
+  cp docs/RUNBOOK.md docs/USB_HID_COMAP.md docs/COMPATIBILITY_MATRIX.md docs/PRODUCTION_MATRIX.md docs/VM_ACCEPTANCE.md docs/THREAT_MODEL.md docs/PROFESSIONALIZATION_PLAN.md docs/CONFIGURATION_COMPATIBILITY.md docs/RAPID_SCADA_INTEGRATION.md docs/GENERATOR_SCADA_PRODUCTION_READINESS.md docs/SCADA_STACK_INSTALLER.md docs/RC_MONITOR_OPERATIONS.md docs/RAPID_SCADA_MONITOR_BINDING.md "$stage/docs/"
   cp README.md SECURITY.md SUPPORT.md CHANGELOG.md LICENSE NOTICE THIRD_PARTY_NOTICES.md "$stage/"
-  chmod 0755 "$stage/bin/rc-gateway" "$stage/scripts/"*.sh
+  chmod 0755 "$stage/bin/rc-gateway" "$stage/bin/rc-monitor" "$stage/scripts/"*.sh
+
+  if [[ "$HOST_GOOS" == "linux" && "$HOST_GOARCH" == "$arch" ]]; then
+    "$stage/bin/rc-monitor" --check-config --config "$stage/configs/monitor/rc-monitor.fake.json"
+    "$stage/bin/rc-monitor" --check-config --config "$stage/configs/monitor/rc-monitor.synthetic.json"
+    "$stage/scripts/install-rc-monitor.sh" --dry-run "$stage/configs/monitor/rc-monitor.fake.json"
+  fi
+
   printf '%s\n' "$VERSION" > "$stage/VERSION"
   {
     printf 'product=rc-gateway\n'
+    printf 'component=rc-monitor\n'
     printf 'license=Proprietary-All-Rights-Reserved\n'
     printf 'version=%s\n' "$VERSION"
     printf 'commit=%s\n' "$COMMIT"
@@ -40,6 +58,7 @@ for arch in $ARCHES; do
     printf 'goos=linux\n'
     printf 'goarch=%s\n' "$arch"
   } > "$stage/MANIFEST"
+
   if command -v cyclonedx-gomod >/dev/null 2>&1; then
     GOOS=linux GOARCH="$arch" CGO_ENABLED=0 cyclonedx-gomod app -json -noserial -notimestamp -output "$stage/sbom.cdx.json" -main cmd/rc-gateway "$ROOT_DIR"
   elif [[ "$REQUIRE_SBOM" == "1" ]]; then
@@ -48,6 +67,7 @@ for arch in $ARCHES; do
   else
     echo "AVISO: SBOM não gerado." >&2
   fi
+
   archive="$DIST_DIR/$pkg.tar.gz"
   (
     cd "$DIST_DIR"
