@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -113,8 +114,8 @@ func (c Config) Validate() error {
 }
 
 func (c RapidWebConfig) Validate() error {
-	if strings.TrimSpace(c.BaseURL) == "" {
-		return errors.New("rapidWeb.baseUrl is required")
+	if err := validateLoopbackURL(c.BaseURL); err != nil {
+		return fmt.Errorf("rapidWeb.baseUrl: %w", err)
 	}
 	if !envNamePattern.MatchString(c.UsernameEnv) {
 		return errors.New("rapidWeb.usernameEnv must be an environment variable name")
@@ -172,12 +173,39 @@ func validateLoopbackBind(address string) error {
 	if port == "" {
 		return errors.New("port is required")
 	}
-	if strings.EqualFold(host, "localhost") {
-		return nil
-	}
-	ip := net.ParseIP(host)
-	if ip == nil || !ip.IsLoopback() {
+	if !isLoopbackHost(host) {
 		return fmt.Errorf("host %q is not loopback", host)
 	}
 	return nil
+}
+
+func validateLoopbackURL(raw string) error {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return fmt.Errorf("invalid URL: %w", err)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return errors.New("must use http or https")
+	}
+	if parsed.User != nil {
+		return errors.New("must not contain user info")
+	}
+	if parsed.Hostname() == "" {
+		return errors.New("host is required")
+	}
+	if parsed.RawQuery != "" || parsed.Fragment != "" {
+		return errors.New("must not contain query or fragment")
+	}
+	if !isLoopbackHost(parsed.Hostname()) {
+		return fmt.Errorf("host %q is not loopback", parsed.Hostname())
+	}
+	return nil
+}
+
+func isLoopbackHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
