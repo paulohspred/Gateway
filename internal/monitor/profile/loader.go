@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 )
 
+const maxProfileFileBytes = 1 << 20
+
 func LoadDir(dir string) (Bundle, error) {
 	manifestPath := filepath.Join(dir, "manifest.json")
 	var manifest Manifest
@@ -51,7 +53,7 @@ func decodeStrictFile(path string, dst any) error {
 	}
 	defer file.Close()
 
-	decoder := json.NewDecoder(io.LimitReader(file, 1<<20))
+	decoder := json.NewDecoder(io.LimitReader(file, maxProfileFileBytes))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(dst); err != nil {
 		return err
