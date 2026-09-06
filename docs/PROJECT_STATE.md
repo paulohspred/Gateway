@@ -226,21 +226,24 @@ Decisão após revisar Rapid SCADA 6.4.7 upstream:
 - `ConnectionOptions` default usa host `localhost`, port `10000`, timeout 10000 ms;
 - Rapid `CnlData` considera status `> 0` definido e status `<= 0` indefinido.
 
-**Não reimplementar o protocolo Server do Rapid em Go.** O `RapidScadaProvider` usa uma interface estreita `Reader`; MON-005 conectará essa interface a um adapter local baseado nas bibliotecas suportadas do Rapid.
+**Não reimplementar o protocolo Server do Rapid em Go.** O `RapidScadaProvider` usa uma interface estreita `Reader`; MON-005 conecta essa interface ao Web API oficial do Rapid SCADA ou a outro adapter suportado, sem interpretar registradores no RC Monitor.
 
-Incremento em desenvolvimento:
+Incremento publicado:
 
 ```text
-internal/monitor/rapid/
-  provider.go
-  binding.go
-  provider_test.go
+706353732203adb4076271ece8700ccee470f45f
+internal/monitor/rapid/provider.go
+internal/monitor/rapid/binding.go
+internal/monitor/rapid/provider_test.go
+controllers/rc-simulator/reference-controller/rapid/channels.json
+CodeQL #56: SUCCESS
+Gateway CI #129: FAILURE somente Staticcheck ST1005 em mensagens de erro de binding.go
 
-controllers/rc-simulator/reference-controller/rapid/
-  channels.json
+5c0a00cbc0a2106b50eeb42e819c68b5e1220189
+correção ST1005 publicada; nova validação CI/CodeQL pendente neste handoff
 ```
 
-Contrato em implementação:
+Contrato:
 
 - `Reader.ReadCurrent`, `ReadAlarms`, `ReadEvents`, `Health`;
 - `Provider` implementa exatamente `monitor.Provider`;
@@ -254,12 +257,12 @@ Contrato em implementação:
 - health do Reader indisponível produz provider `unavailable`;
 - nenhum write/comando é implementado.
 
-`MON-004` permanece `IN_PROGRESS` até o código ser publicado e CI + CodeQL verdes no mesmo HEAD.
+`MON-004` permanece `IN_PROGRESS` até CI + CodeQL verdes no mesmo HEAD.
 
 ## 13. Próxima fila
 
 ```text
-MON-005 implementar adapter local Rapid baseado no cliente suportado e provar
+MON-005 implementar adapter Rapid Web API read-only e provar
         Rapid -> Reader -> Provider -> Service -> /api/v1 com canais vinculados
 MON-006 hardening rc-monitor: config/non-root/systemd/logs/observabilidade
 MON-007 restart/recovery/soak próprios do rc-monitor
@@ -307,8 +310,8 @@ implemented
 | MON-001 | DONE | Foundation/model/Provider/Service/FakeProvider; CI #122 + CodeQL #49 PASS. |
 | MON-002 | DONE | API read-only `/api/v1`; CI #126 + CodeQL #53 PASS. |
 | MON-003 | DONE | Controller Profiles schema/loader/profile sintético; CI #128 + CodeQL #55 PASS. |
-| MON-004 | IN_PROGRESS | `RapidScadaProvider`, Reader seam e binding de canais Rapid; CI/CodeQL pendentes. |
-| MON-005 | NEXT | Adapter Rapid suportado + integração semântica E2E contra Rapid real/sintético. |
+| MON-004 | IN_PROGRESS | `RapidScadaProvider`, Reader seam e binding de canais Rapid; correção CI #129 publicada, revalidação pendente. |
+| MON-005 | NEXT | Adapter Rapid Web API suportado + integração semântica E2E contra Rapid real/sintético. |
 | MON-006 | TODO | Hardening monitor: non-root/systemd/config/logs/observabilidade. |
 | MON-007 | TODO | Soak/recovery próprios do rc-monitor. |
 | HIL-001 | BLOCKED | HIL read-only primeira controladora real. |
@@ -326,11 +329,11 @@ implemented
 ## 16. Próximo passo exato
 
 ```text
-Concluir MON-004:
-1. publicar RapidScadaProvider + binding + testes;
-2. CI + CodeQL verdes no mesmo HEAD;
-3. marcar MON-004 DONE;
-4. MON-005 só toca o Rapid real após SOAK-001 fechar.
+1. confirmar CI + CodeQL verdes após 5c0a00c;
+2. fechar MON-004;
+3. implementar MON-005 usando o Web API oficial read-only do Rapid SCADA 6.4.7;
+4. expandir modelo/perfis RC com referência factual das famílias ComAp/DSE/SmartGen/MEBAY/Kohler/Basler/PowerZone/Briggs/Generac, sem copiar JSON GPL;
+5. não tocar na VM até SOAK-001 fechar.
 ```
 
 ## 17. Proibições atuais
@@ -340,7 +343,7 @@ Concluir MON-004:
 - não colocar Modbus/register maps no Gateway;
 - não reimplementar o Rapid Server wire protocol no rc-monitor;
 - não inventar zero;
-- não tratar `REFERENCE_ONLY` como compatibilidade;
+- não tratar `REFERENCE_ONLY` ou `draft` como compatibilidade validada;
 - não habilitar writes industriais;
 - não tocar na VM durante SOAK-001;
 - não declarar produção antes dos gates;
