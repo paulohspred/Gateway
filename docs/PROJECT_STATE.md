@@ -80,26 +80,23 @@ Implementado no candidato:
 - instalador próprio com config candidata validada em `/etc`, env `0600` e readiness;
 - release reprodutível inclui `rc-monitor`, unit, exemplos, controllers e docs.
 
-Histórico de gates do candidato:
+Histórico recente de gates:
 
 ```text
 e2f752b39e004b43521b33c6dbb7cd7614ee0958
   CodeQL #68 SUCCESS
-  Gateway CI #141 FAIL: Format somente (internal/monitor/model.go)
+  Gateway CI #141 FAIL somente em gofmt
 
 6dc6f7db6cea2d21eb7e10ef854bbb53958262f9
   CodeQL #69 SUCCESS
-  Gateway CI #142:
-    Canonical state SUCCESS
-    Format SUCCESS
-    Module integrity SUCCESS
-    FAIL em go vet: maxProfileFileBytes undefined
+  Gateway CI #142: canonical/format/module integrity SUCCESS; FAIL go vet por maxProfileFileBytes ausente
 
-3873e9f09e45efed749cbec42d3136afdf10fa76
-  corrigiu gofmt do model.go
+7bae96f4ef07eb1615fcca962c97a93a012f7001
+  CodeQL #70 SUCCESS
+  Gateway CI #143: canonical/workflow lint/format/module integrity/vet SUCCESS; FAIL somente Staticcheck S1016
 
-77b3f86b4687e1d63809f0da6f6f06bc502ebb14
-  restaurou limite compartilhado maxProfileFileBytes=1 MiB para loaders
+569b39e3ce9ef15008e0c9ebc81befa81d606828
+  corrige S1016 usando conversão direta DraftAlarmDefinition -> AlarmDefinition
 ```
 
 MON-005 e MON-006 permanecem `IN_PROGRESS` até Gateway CI + CodeQL ficarem verdes no mesmo HEAD.
