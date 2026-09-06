@@ -26,10 +26,11 @@ type Options struct {
 // RC Monitor domain contract before any Rapid SCADA dependency is introduced.
 // It is not a historian and does not emulate Modbus or another wire protocol.
 type Provider struct {
-	mu        sync.RWMutex
-	now       func() time.Time
-	scenario  Scenario
-	generator monitor.Generator
+	mu           sync.RWMutex
+	now          func() time.Time
+	scenario     Scenario
+	healthStatus monitor.ProviderStatus
+	generator    monitor.Generator
 }
 
 func NewProvider(options Options) *Provider {
@@ -38,8 +39,9 @@ func NewProvider(options Options) *Provider {
 		now = func() time.Time { return time.Now().UTC() }
 	}
 	return &Provider{
-		now:      now,
-		scenario: ScenarioOnline,
+		now:          now,
+		scenario:     ScenarioOnline,
+		healthStatus: monitor.ProviderHealthy,
 		generator: monitor.Generator{
 			ID:     "gen-sim-001",
 			Name:   "Gerador Simulado 01",
@@ -58,6 +60,16 @@ func (p *Provider) SetScenario(scenario Scenario) error {
 	}
 	p.mu.Lock()
 	p.scenario = scenario
+	p.mu.Unlock()
+	return nil
+}
+
+func (p *Provider) SetProviderStatus(status monitor.ProviderStatus) error {
+	if !validProviderStatus(status) {
+		return fmt.Errorf("unknown fake provider status %q", status)
+	}
+	p.mu.Lock()
+	p.healthStatus = status
 	p.mu.Unlock()
 	return nil
 }
@@ -207,11 +219,16 @@ func (p *Provider) Health(ctx context.Context) (monitor.ProviderHealth, error) {
 	}
 	p.mu.RLock()
 	now := p.now().UTC()
+	status := p.healthStatus
 	p.mu.RUnlock()
+	message := "fake provider ready"
+	if status != monitor.ProviderHealthy {
+		message = "fake provider not ready"
+	}
 	return monitor.ProviderHealth{
-		Status:    monitor.ProviderHealthy,
+		Status:    status,
 		CheckedAt: now,
-		Message:   "fake provider ready",
+		Message:   message,
 	}, nil
 }
 
@@ -239,6 +256,15 @@ func contextErr(ctx context.Context) error {
 func validScenario(scenario Scenario) bool {
 	switch scenario {
 	case ScenarioOnline, ScenarioStale, ScenarioOffline, ScenarioAlarm:
+		return true
+	default:
+		return false
+	}
+}
+
+func validProviderStatus(status monitor.ProviderStatus) bool {
+	switch status {
+	case monitor.ProviderHealthy, monitor.ProviderDegraded, monitor.ProviderUnavailable:
 		return true
 	default:
 		return false

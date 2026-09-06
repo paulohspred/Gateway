@@ -123,6 +123,23 @@ func TestRecoveryFromOfflineBackToOnline(t *testing.T) {
 	}
 }
 
+func TestProviderHealthCanBeDegradedWithoutInventingTransportFailure(t *testing.T) {
+	provider := newTestProvider()
+	if err := provider.SetProviderStatus(monitor.ProviderDegraded); err != nil {
+		t.Fatal(err)
+	}
+	health, err := provider.Health(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if health.Status != monitor.ProviderDegraded {
+		t.Fatalf("expected degraded provider health, got %s", health.Status)
+	}
+	if err := provider.SetProviderStatus(monitor.ProviderStatus("invalid")); err == nil {
+		t.Fatal("expected invalid provider status to be rejected")
+	}
+}
+
 func TestUnknownGeneratorUsesStableSentinel(t *testing.T) {
 	provider := newTestProvider()
 	_, err := provider.GetGenerator(context.Background(), "missing")

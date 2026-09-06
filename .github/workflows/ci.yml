@@ -66,7 +66,10 @@ jobs:
       - name: Race detector
         run: go test -race ./... -count=1
       - name: Build
-        run: go build -trimpath ./cmd/rc-gateway
+        run: |
+          go build -trimpath ./cmd/rc-gateway
+          go build -trimpath ./cmd/rc-monitor
+          ./rc-monitor --version
       - name: Validate production examples
         run: |
           ./rc-gateway --version
