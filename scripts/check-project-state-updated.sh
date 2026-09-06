@@ -8,13 +8,6 @@ fail() {
   exit 1
 }
 
-trim() {
-  local value="$1"
-  value="${value#"${value%%[![:space:]]*}"}"
-  value="${value%"${value##*[![:space:]]}"}"
-  printf '%s' "$value"
-}
-
 marker_value() {
   local key="$1"
   sed -n "s/^<!-- ${key}: \(.*\) -->$/\1/p" "$DOC" | head -n1
@@ -104,7 +97,28 @@ if [[ "$production_validated" == "true" ]]; then
   done
 fi
 
-# Mudanças materiais devem atualizar o handoff no mesmo conjunto de mudanças.
+# O handoff precisa ter sido atualizado no mesmo commit material ou em commit
+# posterior. Em PRs o checkout é um merge sintético; por isso a comparação usa
+# explicitamente a branch head quando ela estiver disponível.
+TRACK_REF="HEAD"
+if [[ -n "${GITHUB_HEAD_REF:-}" ]] && git rev-parse --verify "origin/${GITHUB_HEAD_REF}" >/dev/null 2>&1; then
+  TRACK_REF="origin/${GITHUB_HEAD_REF}"
+fi
+
+material_paths=(
+  cmd internal configs catalog scripts systemd backend frontend web ui api
+  go.mod go.sum .github/workflows
+)
+latest_material_commit="$(git log -1 --format=%H "$TRACK_REF" -- "${material_paths[@]}" || true)"
+latest_doc_commit="$(git log -1 --format=%H "$TRACK_REF" -- "$DOC" || true)"
+
+[[ -n "$latest_doc_commit" ]] || fail "não foi possível localizar commit de $DOC"
+if [[ -n "$latest_material_commit" ]] && ! git merge-base --is-ancestor "$latest_material_commit" "$latest_doc_commit"; then
+  fail "$DOC está mais antigo que a última mudança material ($latest_material_commit); atualize o handoff depois da mudança"
+fi
+
+# O conjunto proposto também precisa conter o handoff quando há mudança material
+# em relação à base do PR/main. Este gate mantém o motivo explícito no diff.
 if [[ -n "${GITHUB_BASE_REF:-}" ]] && git rev-parse --verify "origin/${GITHUB_BASE_REF}" >/dev/null 2>&1; then
   BASE="origin/${GITHUB_BASE_REF}"
 elif [[ "${GITHUB_REF_NAME:-}" != "main" ]] && git rev-parse --verify origin/main >/dev/null 2>&1; then
@@ -112,16 +126,16 @@ elif [[ "${GITHUB_REF_NAME:-}" != "main" ]] && git rev-parse --verify origin/mai
 elif git rev-parse --verify HEAD^ >/dev/null 2>&1; then
   BASE="HEAD^"
 else
-  echo "Sem commit-base disponível; estrutura do documento canônico validada."
+  echo "Sem commit-base disponível; estrutura e freshness do documento canônico validadas."
   exit 0
 fi
 
-changed="$(git diff --name-only "$BASE"...HEAD)"
+changed="$(git diff --name-only "$BASE"..."$TRACK_REF")"
 source_changed="$(printf '%s\n' "$changed" | grep -E '^(cmd/|internal/|configs/|catalog/|scripts/|systemd/|backend/|frontend/|web/|ui/|api/|go\.(mod|sum)$|\.github/workflows/)' || true)"
 doc_changed="$(printf '%s\n' "$changed" | grep -Fx "$DOC" || true)"
 
 if [[ -n "$source_changed" && -z "$doc_changed" ]]; then
-  echo "ERRO: código/runtime/release mudou sem atualizar $DOC no mesmo conjunto de mudanças." >&2
+  echo "ERRO: código/runtime/release mudou sem atualizar $DOC no conjunto proposto." >&2
   echo "Mudanças relevantes:" >&2
   printf '%s\n' "$source_changed" >&2
   echo >&2
@@ -129,4 +143,4 @@ if [[ -n "$source_changed" && -z "$doc_changed" ]]; then
   exit 1
 fi
 
-echo "PROJECT_STATE.md válido: schema, invariantes, checklist, ponteiros de continuidade e freshness gate OK."
+echo "PROJECT_STATE.md válido: schema, invariantes, checklist, ponteiros e freshness por ancestralidade OK."
