@@ -37,6 +37,11 @@ go build -trimpath ./cmd/rc-monitor
 for cfg in configs/*.json; do
   ./rc-gateway --check-config --config "$cfg"
 done
+for cfg in configs/monitor/*.json; do
+  ./rc-monitor --check-config --config "$cfg"
+done
+
+bash -n scripts/*.sh
 
 rm -f rc-gateway rc-monitor coverage.out
 echo "Gateway + RC Monitor CI local OK"
