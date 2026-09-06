@@ -16,13 +16,9 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/paulohspred/Gateway/internal/monitor"
 )
 
 const maxRapidWebResponseBytes = 2 << 20
-
-var ErrRapidSemanticBindingRequired = errors.New("rapid semantic binding required")
 
 type WebReaderOptions struct {
 	BaseURL   string
@@ -125,12 +121,34 @@ func (r *WebReader) ReadCurrent(ctx context.Context, channels []int) ([]ChannelD
 	return data, err
 }
 
-func (r *WebReader) ReadAlarms(context.Context, string) ([]monitor.Alarm, error) {
-	return nil, ErrRapidSemanticBindingRequired
-}
+func (r *WebReader) ReadRecentEvents(ctx context.Context, query EventQuery) ([]RawEvent, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := query.Validate(); err != nil {
+		return nil, err
+	}
 
-func (r *WebReader) ReadEvents(context.Context, string) ([]monitor.Event, error) {
-	return nil, ErrRapidSemanticBindingRequired
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err := r.ensureLoginLocked(ctx); err != nil {
+		return nil, err
+	}
+
+	events, status, err := r.getRecentEventsLocked(ctx, query)
+	if err == nil {
+		return events, nil
+	}
+	if status != http.StatusUnauthorized && status != http.StatusForbidden {
+		return nil, err
+	}
+
+	r.authenticated = false
+	if err := r.ensureLoginLocked(ctx); err != nil {
+		return nil, err
+	}
+	events, _, err = r.getRecentEventsLocked(ctx, query)
+	return events, err
 }
 
 func (r *WebReader) Health(ctx context.Context) error {
@@ -250,6 +268,79 @@ func (r *WebReader) getCurrentLocked(ctx context.Context, channels []int) ([]Cha
 	return data, response.StatusCode, nil
 }
 
+func (r *WebReader) getRecentEventsLocked(ctx context.Context, query EventQuery) ([]RawEvent, int, error) {
+	endpoint := r.resolve("Api/Main/GetLastAvailableEvents")
+	values := endpoint.Query()
+	values.Set("archiveBit", strconv.Itoa(query.ArchiveBit))
+	values.Set("period", strconv.Itoa(query.PeriodDays))
+	values.Set("limit", strconv.Itoa(query.Limit))
+	values.Set("filterID", "0")
+	endpoint.RawQuery = values.Encode()
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
+	if err != nil {
+		return nil, 0, fmt.Errorf("create rapid event request: %w", err)
+	}
+	request.Header.Set("Accept", "application/json")
+	response, err := r.client.Do(request)
+	if err != nil {
+		return nil, 0, fmt.Errorf("rapid event request: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return nil, response.StatusCode, fmt.Errorf("rapid event request returned HTTP %d", response.StatusCode)
+	}
+
+	var dto rapidDTO[rapidEventPacket]
+	if err := decodeRapidJSON(response.Body, &dto); err != nil {
+		return nil, response.StatusCode, fmt.Errorf("decode rapid event response: %w", err)
+	}
+	if !dto.OK {
+		message := strings.TrimSpace(dto.Message)
+		if message == "" {
+			message = "request rejected"
+		}
+		return nil, response.StatusCode, fmt.Errorf("rapid event request failed: %s", message)
+	}
+
+	events := make([]RawEvent, 0, len(dto.Data.Records))
+	seen := make(map[string]struct{}, len(dto.Data.Records))
+	for _, record := range dto.Data.Records {
+		id := strings.TrimSpace(record.ID)
+		if id == "" {
+			return nil, response.StatusCode, errors.New("rapid returned event with empty id")
+		}
+		if _, exists := seen[id]; exists {
+			return nil, response.StatusCode, fmt.Errorf("rapid returned duplicate event id %q", id)
+		}
+		seen[id] = struct{}{}
+		occurredAt, err := parseRapidEventTime(record.Event.Timestamp)
+		if err != nil {
+			return nil, response.StatusCode, fmt.Errorf("rapid event %q timestamp: %w", id, err)
+		}
+		raw := RawEvent{
+			ID:             id,
+			ChannelNumber:  record.Event.ChannelNumber,
+			PreviousValue:  record.Event.PreviousValue,
+			PreviousStatus: record.Event.PreviousStatus,
+			Value:          record.Event.Value,
+			Status:         record.Event.Status,
+			OccurredAt:     occurredAt,
+		}
+		if err := raw.Validate(); err != nil {
+			return nil, response.StatusCode, err
+		}
+		events = append(events, raw)
+	}
+	sort.SliceStable(events, func(i, j int) bool {
+		if events[i].OccurredAt.Equal(events[j].OccurredAt) {
+			return events[i].ID < events[j].ID
+		}
+		return events[i].OccurredAt.After(events[j].OccurredAt)
+	})
+	return events, response.StatusCode, nil
+}
+
 func (r *WebReader) resolve(path string) *url.URL {
 	relative := &url.URL{Path: path}
 	return r.baseURL.ResolveReference(relative)
@@ -265,6 +356,25 @@ type rapidCurrentPoint struct {
 	ChannelNumber int     `json:"cnlNum"`
 	Value         float64 `json:"val"`
 	Status        int     `json:"stat"`
+}
+
+type rapidEventPacket struct {
+	Records  []rapidEventRecord `json:"records"`
+	FilterID string             `json:"filterID"`
+}
+
+type rapidEventRecord struct {
+	ID    string          `json:"id"`
+	Event rapidEventPoint `json:"e"`
+}
+
+type rapidEventPoint struct {
+	Timestamp      string  `json:"timestamp"`
+	ChannelNumber  int     `json:"cnlNum"`
+	PreviousValue  float64 `json:"prevCnlVal"`
+	PreviousStatus int     `json:"prevCnlStat"`
+	Value          float64 `json:"cnlVal"`
+	Status         int     `json:"cnlStat"`
 }
 
 func decodeRapidJSON(reader io.Reader, target any) error {
@@ -340,4 +450,20 @@ func normalizeChannelNumbers(channels []int) ([]int, error) {
 	return out, nil
 }
 
-var _ Reader = (*WebReader)(nil)
+func parseRapidEventTime(raw string) (time.Time, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return time.Time{}, errors.New("timestamp is empty")
+	}
+	if parsed, err := time.Parse(time.RFC3339Nano, raw); err == nil {
+		return parsed.UTC(), nil
+	}
+	for _, layout := range []string{"2006-01-02T15:04:05.9999999", "2006-01-02T15:04:05"} {
+		if parsed, err := time.ParseInLocation(layout, raw, time.UTC); err == nil {
+			return parsed.UTC(), nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("unsupported timestamp %q", raw)
+}
+
+var _ RawReader = (*WebReader)(nil)
