@@ -134,11 +134,7 @@ func (d DraftController) Bundle() (Bundle, error) {
 		if strings.TrimSpace(alarm.Message) == "" {
 			return Bundle{}, fmt.Errorf("alarm %q message is required", alarm.Code)
 		}
-		alarms = append(alarms, AlarmDefinition{
-			Code:     alarm.Code,
-			Severity: alarm.Severity,
-			Message:  alarm.Message,
-		})
+		alarms = append(alarms, AlarmDefinition(alarm))
 	}
 
 	bundle := Bundle{
