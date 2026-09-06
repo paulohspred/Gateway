@@ -57,7 +57,14 @@ if ! id rc-monitor >/dev/null 2>&1; then
   useradd --system --gid rc-monitor --home-dir /nonexistent --shell /usr/sbin/nologin rc-monitor
 fi
 
-install -o root -g rc-monitor -m 0640 "$CONFIG_SOURCE" "$CONFIG_TARGET"
+config_candidate="$(mktemp /etc/.rc-monitor-config.XXXXXX)"
+cleanup(){ rm -f "$config_candidate"; }
+trap cleanup EXIT
+install -o root -g rc-monitor -m 0640 "$CONFIG_SOURCE" "$config_candidate"
+"$ROOT/current/bin/rc-monitor" --check-config --config "$config_candidate"
+mv -f "$config_candidate" "$CONFIG_TARGET"
+trap - EXIT
+
 if [[ -n "$ENV_SOURCE" ]]; then
   install -o root -g root -m 0600 "$ENV_SOURCE" "$ENV_TARGET"
 elif [[ ! -f "$ENV_TARGET" ]]; then
