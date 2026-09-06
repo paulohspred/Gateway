@@ -203,7 +203,7 @@ func newRapidWebProvider(config appconfig.Config, configs []rapid.GeneratorConfi
 		return nil, fmt.Errorf("environment variable %s is required", config.RapidWeb.PasswordEnv)
 	}
 
-	reader, err := rapid.NewWebReader(rapid.WebReaderOptions{
+	rawReader, err := rapid.NewWebReader(rapid.WebReaderOptions{
 		BaseURL:  config.RapidWeb.BaseURL,
 		Username: username,
 		Password: password,
@@ -212,7 +212,11 @@ func newRapidWebProvider(config appconfig.Config, configs []rapid.GeneratorConfi
 	if err != nil {
 		return nil, err
 	}
-	return rapid.NewProvider(reader, configs, rapid.Options{})
+	semanticReader, err := rapid.NewSemanticReader(rawReader, configs, rapid.SemanticOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return rapid.NewProvider(semanticReader, configs, rapid.Options{})
 }
 
 func validateLoopbackBind(address string) error {
