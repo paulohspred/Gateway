@@ -161,6 +161,8 @@ Gates adicionados para a branch frontend:
 .github/workflows/codeql-frontend.yml
 ```
 
+Primeiro `Frontend CI #1` instalou as dependências e encontrou no typecheck apenas uma dependência desnecessária de `process.cwd()` no `vite.config.ts`; a correção remove `process` e usa `loadEnv(mode, ".", "")`. Novo gate precisa confirmar typecheck/test/build verdes.
+
 A implementação ainda **não é considerada validada** até Frontend CI + CodeQL Frontend passarem no mesmo HEAD proposto.
 
 ## Checklist canônico
@@ -204,7 +206,7 @@ A implementação ainda **não é considerada validada** até Frontend CI + Code
 
 ```text
 1. manter a VM intocada enquanto SOAK-001 estiver em execução;
-2. validar a primeira implementação frontend com Frontend CI + CodeQL Frontend no mesmo HEAD;
+2. validar a correção frontend com Frontend CI + CodeQL Frontend no mesmo HEAD;
 3. corrigir typecheck/test/build até verde antes de marcar UI-002 DONE;
 4. UI-003 é NEXT: consolidar a integração real e resolver capability/profile read-only para HMI adaptativa;
 5. após SOAK-001, validar installer/hardening no host real com preflight non-disruptive;
