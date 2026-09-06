@@ -11,26 +11,26 @@ import (
 type MetricKey string
 
 const (
-	MetricEngineRPM               MetricKey = "engine.rpm"
-	MetricEngineOilPressure       MetricKey = "engine.oil_pressure"
-	MetricEngineCoolantTemp       MetricKey = "engine.coolant_temperature"
-	MetricEngineRunHours          MetricKey = "engine.run_hours"
-	MetricGeneratorVoltageL1      MetricKey = "generator.voltage_l1"
-	MetricGeneratorVoltageL2      MetricKey = "generator.voltage_l2"
-	MetricGeneratorVoltageL3      MetricKey = "generator.voltage_l3"
-	MetricGeneratorFrequency      MetricKey = "generator.frequency"
-	MetricGeneratorCurrentL1      MetricKey = "generator.current_l1"
-	MetricGeneratorPowerKW        MetricKey = "generator.power_kw"
-	MetricGeneratorPowerKVA       MetricKey = "generator.power_kva"
-	MetricGeneratorPowerKVAR      MetricKey = "generator.power_kvar"
-	MetricGeneratorPowerFactor    MetricKey = "generator.power_factor"
-	MetricMainsVoltageL1          MetricKey = "mains.voltage_l1"
-	MetricMainsFrequency          MetricKey = "mains.frequency"
-	MetricControllerMode          MetricKey = "controller.mode"
-	MetricBreakerGCB              MetricKey = "breaker.gcb"
-	MetricBreakerMCB              MetricKey = "breaker.mcb"
-	MetricBatteryVoltage          MetricKey = "battery.voltage"
-	MetricFuelLevel               MetricKey = "fuel.level"
+	MetricEngineRPM            MetricKey = "engine.rpm"
+	MetricEngineOilPressure    MetricKey = "engine.oil_pressure"
+	MetricEngineCoolantTemp    MetricKey = "engine.coolant_temperature"
+	MetricEngineRunHours       MetricKey = "engine.run_hours"
+	MetricGeneratorVoltageL1   MetricKey = "generator.voltage_l1"
+	MetricGeneratorVoltageL2   MetricKey = "generator.voltage_l2"
+	MetricGeneratorVoltageL3   MetricKey = "generator.voltage_l3"
+	MetricGeneratorFrequency   MetricKey = "generator.frequency"
+	MetricGeneratorCurrentL1   MetricKey = "generator.current_l1"
+	MetricGeneratorPowerKW     MetricKey = "generator.power_kw"
+	MetricGeneratorPowerKVA    MetricKey = "generator.power_kva"
+	MetricGeneratorPowerKVAR   MetricKey = "generator.power_kvar"
+	MetricGeneratorPowerFactor MetricKey = "generator.power_factor"
+	MetricMainsVoltageL1       MetricKey = "mains.voltage_l1"
+	MetricMainsFrequency       MetricKey = "mains.frequency"
+	MetricControllerMode       MetricKey = "controller.mode"
+	MetricBreakerGCB           MetricKey = "breaker.gcb"
+	MetricBreakerMCB           MetricKey = "breaker.mcb"
+	MetricBatteryVoltage       MetricKey = "battery.voltage"
+	MetricFuelLevel            MetricKey = "fuel.level"
 )
 
 type ValueKind string
@@ -179,10 +179,10 @@ func (g Generator) Validate() error {
 }
 
 type TelemetrySnapshot struct {
-	GeneratorID   string                 `json:"generatorId"`
-	CapturedAt    time.Time              `json:"capturedAt"`
-	Communication CommunicationState     `json:"communication"`
-	Metrics       map[MetricKey]Metric   `json:"metrics"`
+	GeneratorID   string               `json:"generatorId"`
+	CapturedAt    time.Time            `json:"capturedAt"`
+	Communication CommunicationState   `json:"communication"`
+	Metrics       map[MetricKey]Metric `json:"metrics"`
 }
 
 func (s TelemetrySnapshot) Validate() error {
@@ -207,14 +207,14 @@ func (s TelemetrySnapshot) Validate() error {
 }
 
 type Alarm struct {
-	ID         string        `json:"id"`
-	GeneratorID string       `json:"generatorId"`
-	Code       string        `json:"code"`
-	Severity   AlarmSeverity `json:"severity"`
-	Message    string        `json:"message"`
-	Active     bool          `json:"active"`
-	RaisedAt   time.Time     `json:"raisedAt"`
-	ClearedAt  *time.Time    `json:"clearedAt,omitempty"`
+	ID          string        `json:"id"`
+	GeneratorID string        `json:"generatorId"`
+	Code        string        `json:"code"`
+	Severity    AlarmSeverity `json:"severity"`
+	Message     string        `json:"message"`
+	Active      bool          `json:"active"`
+	RaisedAt    time.Time     `json:"raisedAt"`
+	ClearedAt   *time.Time    `json:"clearedAt,omitempty"`
 }
 
 type Event struct {
