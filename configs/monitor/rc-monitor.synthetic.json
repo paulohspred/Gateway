@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "bind": "127.0.0.1:18100",
+  "provider": "rapid-web",
+  "rapidWeb": {
+    "baseUrl": "http://127.0.0.1/",
+    "usernameEnv": "RC_RAPID_USER",
+    "passwordEnv": "RC_RAPID_PASSWORD",
+    "timeoutSeconds": 10
+  },
+  "generators": [
+    {
+      "id": "gen-sim-001",
+      "name": "Gerador Simulado 01",
+      "siteId": "site-sim-001",
+      "profileDir": "../../controllers/rc-simulator/reference-controller",
+      "rapidBinding": "../../controllers/rc-simulator/reference-controller/rapid/channels.json"
+    }
+  ]
+}
