@@ -3,7 +3,7 @@
 <!-- PROJECT_STATE_SCHEMA: 2 -->
 <!-- CANONICAL_HANDOFF: true -->
 <!-- CURRENT_CODE_BRANCH: feature/frontend-contract -->
-<!-- CURRENT_DEVELOPMENT_TASK: UI-002 -->
+<!-- CURRENT_DEVELOPMENT_TASK: UI-003 -->
 <!-- EXTERNAL_RUNNING_GATE: SOAK-001 -->
 <!-- PRODUCTION_VALIDATED: false -->
 <!-- PR2_MUST_REMAIN_DRAFT: true -->
@@ -32,6 +32,7 @@ Regras: Gateway não contém register maps; RC Monitor recebe canais Rapid, nunc
 - `feature/monitor-core` -> PR #3 -> `hardening/standalone-10x`: deve permanecer draft.
 - `feature/frontend-contract` deriva de `feature/monitor-core` e contém a especificação/implementação do frontend; não mesclar em `main` diretamente.
 - não alterar `main` nem mesclar PR #2/#3 sem ordem explícita do proprietário;
+- PR #4 (`feature/frontend-contract` -> `feature/monitor-core`) deve permanecer draft durante UI-003/UI-004;
 - `tmp-backend-finish` é somente branch de montagem/correção para fast-forward do PR #3;
 - não tocar na VM durante `SOAK-001`.
 
@@ -118,11 +119,9 @@ GET /api/v1/generators/{id}/alarms
 GET /api/v1/generators/{id}/events
 ```
 
-## Frontend em implementação
+## Frontend — primeira vertical validada
 
-Primeira implementação real iniciada em `feature/frontend-contract` sobre a API read-only existente.
-
-Escopo já codificado, aguardando gates próprios antes de ser considerado concluído:
+A primeira implementação real está em `feature/frontend-contract` sobre a API read-only existente.
 
 ```text
 frontend/
@@ -154,16 +153,32 @@ Características:
 - agregação de frota usa concorrência limitada no cliente enquanto não existe endpoint agregado;
 - `capabilities/profile` read-only continua gap conhecido para distinguir `unsupported` de ausência transitória.
 
-Gates adicionados para a branch frontend:
+Gates próprios:
 
 ```text
 .github/workflows/frontend-ci.yml
 .github/workflows/codeql-frontend.yml
 ```
 
-Primeiro `Frontend CI #1` instalou as dependências e encontrou no typecheck apenas uma dependência desnecessária de `process.cwd()` no `vite.config.ts`; a correção remove `process` e usa `loadEnv(mode, ".", "")`. Novo gate precisa confirmar typecheck/test/build verdes.
+Evidência da implementação validada:
 
-A implementação ainda **não é considerada validada** até Frontend CI + CodeQL Frontend passarem no mesmo HEAD proposto.
+```text
+material frontend fix: d6867dc342b4097edec9fa37409690767f11b51a
+validated descendant HEAD: 98b25986f0c30e56073819e8761b5765633b1df4
+Frontend CI #3: SUCCESS
+  typecheck: SUCCESS
+  unit tests: SUCCESS
+  production build: SUCCESS
+CodeQL Frontend #3: SUCCESS
+CodeQL Go #79: SUCCESS
+Gateway CI #152: SUCCESS
+  quality/unit/race/config: SUCCESS
+  stress/leak: SUCCESS
+  impairment/mini-soak: SUCCESS
+  security/reproducibility/release: SUCCESS
+```
+
+`UI-002` está concluído em software. Isso não significa deployment/produção; `UI-003`, `UI-004`, SEM/HIL e os gates externos continuam pendentes.
 
 ## Checklist canônico
 
@@ -194,9 +209,9 @@ A implementação ainda **não é considerada validada** até Frontend CI + Code
 | HIL-002 | BLOCKED | Modem/VPN/meio físico. |
 | CMD-001 | DEFERRED | Writes só após HIL/interlocks/auditoria. |
 | UI-001 | DONE | Contratos de produto, superfícies, commissioning, ECU e Detalhe do Gerador congelados; implementação real autorizada. |
-| UI-002 | IN_PROGRESS | Shell visual real + primeira vertical codificados; falta Frontend CI/CodeQL Frontend verdes. |
-| UI-003 | NEXT | Consolidar telas/API real, capability/profile read-only e integração de produção. |
-| UI-004 | TODO | Testes frontend, regressão responsiva/visual e edge cases. |
+| UI-002 | DONE | Shell + primeira vertical real; Frontend CI #3, CodeQL Frontend #3, CodeQL #79 e Gateway CI #152 SUCCESS. |
+| UI-003 | IN_PROGRESS | Consolidar telas/API real, capability/profile read-only e integração de produção. |
+| UI-004 | NEXT | Testes frontend ampliados, regressão responsiva/visual e edge cases. |
 | REL-001 | TODO | Confirmar proteção de main. |
 | REL-002 | DONE | Release inclui rc-monitor e passou gate reprodutível/dry-run. |
 | PROD-001 | BLOCKED | Exige SEM + HIL + soak + aprovação. |
@@ -206,10 +221,10 @@ A implementação ainda **não é considerada validada** até Frontend CI + Code
 
 ```text
 1. manter a VM intocada enquanto SOAK-001 estiver em execução;
-2. validar a correção frontend com Frontend CI + CodeQL Frontend no mesmo HEAD;
-3. corrigir typecheck/test/build até verde antes de marcar UI-002 DONE;
-4. UI-003 é NEXT: consolidar a integração real e resolver capability/profile read-only para HMI adaptativa;
-5. após SOAK-001, validar installer/hardening no host real com preflight non-disruptive;
+2. UI-003 está ativo: consolidar integração read-only, serving/deployment do frontend e capability/profile para HMI adaptativa;
+3. endurecer supply chain frontend (lockfile + runtime de Node pinado) antes de release final;
+4. UI-004 é NEXT: ampliar testes de qualidade/ausência/outage e regressão responsiva;
+5. após SOAK-001, verificar o relatório real antes de qualquer toque no host e então executar preflight non-disruptive;
 6. executar SEM-001 com canais Rapid reais;
 7. HIL-001/HIL-002 continuam bloqueados até hardware/meio físico disponível e aprovado.
 ```
