@@ -22,6 +22,29 @@ grep -q 'ip daddr != 127.0.0.0/8 tcp dport { 10000, 10002 }' "$INSTALLER"
 grep -q 'ip6 daddr != ::1 tcp dport { 10000, 10002 }' "$INSTALLER"
 echo "stack installer Rapid internal-port firewall contract: OK"
 
+# HARD-001: ScadaComm was homologated non-root in the VM. The installer must
+# encode that exact least-privilege posture without taking ownership of the
+# Rapid SCADA application tree.
+grep -q 'SCADACOMM_USER="scadacomm"' "$INSTALLER"
+grep -q 'SCADACOMM_OVERRIDE="/etc/systemd/system/scadacomm6.service.d/10-rc-scada-nonroot.conf"' "$INSTALLER"
+grep -q 'SCADACOMM_LOG_DIR="/var/log/scada/ScadaComm/Log"' "$INSTALLER"
+grep -q '^User=scadacomm$' "$INSTALLER"
+grep -q '^Group=scadacomm$' "$INSTALLER"
+grep -q '^NoNewPrivileges=true$' "$INSTALLER"
+grep -q '^PrivateTmp=true$' "$INSTALLER"
+grep -q '^ProtectHome=true$' "$INSTALLER"
+grep -q '^CapabilityBoundingSet=$' "$INSTALLER"
+grep -q '^AmbientCapabilities=$' "$INSTALLER"
+grep -q '^UMask=0027$' "$INSTALLER"
+grep -q 'install -d -o "$SCADACOMM_USER" -g "$SCADACOMM_GROUP" -m 0750 "$SCADACOMM_LOG_DIR"' "$INSTALLER"
+grep -q 'systemctl show scadacomm6.service -p User --value' "$INSTALLER"
+grep -q 'processo scadacomm6 executa como' "$INSTALLER"
+if grep -Eq 'chown[[:space:]]+-R[^\n]*/opt/scada|chown[[:space:]]+--recursive[^\n]*/opt/scada' "$INSTALLER"; then
+  echo "ERRO: installer contém ownership recursivo proibido em /opt/scada" >&2
+  exit 1
+fi
+echo "stack installer ScadaComm non-root least-privilege contract: OK"
+
 tmp="$(mktemp -d)"
 cleanup(){ rm -rf "$tmp"; }
 trap cleanup EXIT
