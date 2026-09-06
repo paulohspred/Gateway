@@ -3,7 +3,7 @@
 <!-- PROJECT_STATE_SCHEMA: 2 -->
 <!-- CANONICAL_HANDOFF: true -->
 <!-- CURRENT_CODE_BRANCH: feature/monitor-core -->
-<!-- CURRENT_DEVELOPMENT_TASK: MON-005 -->
+<!-- CURRENT_DEVELOPMENT_TASK: MON-007 -->
 <!-- EXTERNAL_RUNNING_GATE: SOAK-001 -->
 <!-- PRODUCTION_VALIDATED: false -->
 <!-- PR2_MUST_REMAIN_DRAFT: true -->
@@ -51,59 +51,61 @@ Para DONE: `result=PASS` e todos os contadores `bad_*`, restart/session-id chang
 
 GenMon é referência funcional/factual GPLv2, não fonte para copiar código/JSON ao repositório proprietário. `controllers/DRAFT_PROFILES.json` contém vocabulário RC clean-room para ComAp, DSE, SmartGen, MEBAY, Kohler, Basler, PowerZone, Briggs e Generac, todos `draft` e read-only. Endereços/FC/encoding reais ficam no Rapid SCADA e só são promovidos com documentação permitida e/ou HIL.
 
-## Backend já aprovado
+## Backend aprovado
 
 ```text
 MON-001 DONE  fd73a495...  Gateway CI #122 / CodeQL #49 SUCCESS
 MON-002 DONE  9bc9689c...  Gateway CI #126 / CodeQL #53 SUCCESS
 MON-003 DONE  46f50c2b...  Gateway CI #128 / CodeQL #55 SUCCESS
 MON-004 DONE  b509a382...  Gateway CI #131 / CodeQL #58 SUCCESS
+
+MON-005 DONE + MON-006 DONE
+  HEAD: 67a0776565410e2513f44bab98185f774607c6ed
+  Gateway CI #144: SUCCESS
+    canonical state / workflow lint / format / module integrity / vet / Staticcheck
+    unit+integration / Modbus contract / coverage / race / build / config / local CI
+    1000 concurrent pairs + 1000 churn cycles
+    repeated impaired reconnect mini-soak
+    govulncheck / shell / installer security / reproducible release / installer dry-run
+  CodeQL #71: SUCCESS
 ```
 
-## MON-005 / MON-006 — candidato de fechamento
+## MON-005 — DONE
 
-Implementado no candidato:
+Entregue e validado:
 
 - Rapid Web auth + current data + `GetLastAvailableEvents`;
 - cookie/session e reauth única em 401/403;
 - endpoint Rapid e bind do monitor obrigatoriamente loopback;
-- config estrita; segredos apenas por environment variables;
 - `SemanticReader` e binding de métricas, alarmes e eventos;
 - condições `equals`, `one_of`, `nonzero`, `bit_set`, `gt/gte/lt/lte`;
 - eventos `alarm.raised` / `alarm.cleared`;
 - zero/ausência/stale/offline fail-closed;
 - E2E `Rapid HTTP -> WebReader -> SemanticReader -> Provider -> Service -> /api/v1`;
 - outage/recovery + mini-soak 250 ciclos;
-- validação de outputs do Provider na fronteira Service;
-- `/metrics` somente operacional;
+- validação dos outputs do Provider na fronteira Service.
+
+## MON-006 — DONE
+
+Entregue e validado:
+
+- config JSON estrita; segredos Rapid somente por environment variables;
+- `/healthz`, `/readyz`, `/metrics`, `/api/v1/system/health`;
 - `rc-monitor.service` non-root/hardened;
 - instalador próprio com config candidata validada em `/etc`, env `0600` e readiness;
-- release reprodutível inclui `rc-monitor`, unit, exemplos, controllers e docs.
+- release reprodutível inclui `rc-monitor`, unit, exemplos, controllers e docs;
+- vulnerabilidade, shell, installer archive security e release dry-run verdes.
 
-Histórico recente de gates:
+## MON-007 — IN_PROGRESS
 
-```text
-e2f752b39e004b43521b33c6dbb7cd7614ee0958
-  CodeQL #68 SUCCESS
-  Gateway CI #141 FAIL somente em gofmt
+Objetivo de software antes de qualquer validação na VM:
 
-6dc6f7db6cea2d21eb7e10ef854bbb53958262f9
-  CodeQL #69 SUCCESS
-  Gateway CI #142: canonical/format/module integrity SUCCESS; FAIL go vet por maxProfileFileBytes ausente
-
-7bae96f4ef07eb1615fcca962c97a93a012f7001
-  CodeQL #70 SUCCESS
-  Gateway CI #143: canonical/workflow lint/format/module integrity/vet SUCCESS; FAIL somente Staticcheck S1016
-
-569b39e3ce9ef15008e0c9ebc81befa81d606828
-  corrige S1016 usando conversão direta DraftAlarmDefinition -> AlarmDefinition
-```
-
-MON-005 e MON-006 permanecem `IN_PROGRESS` até Gateway CI + CodeQL ficarem verdes no mesmo HEAD.
-
-## Próximo gate de software
-
-Depois de MON-005/MON-006 verdes, executar MON-007: restart real do processo `rc-monitor` em CI + recovery + mini-soak. A validação systemd/VM real espera SOAK-001 terminar.
+1. provar lifecycle do processo real `rc-monitor`: start -> ready -> SIGTERM/graceful stop -> restart -> ready;
+2. repetir restart várias vezes para detectar bind/leak/regressão básica;
+3. manter explícito o E2E de outage/recovery do Rapid provider e o mini-soak de 250 ciclos;
+4. integrar o gate ao CI, sem systemd e sem tocar na VM;
+5. depois de CI + CodeQL verdes no mesmo HEAD, marcar a parte software de MON-007 concluída;
+6. validação systemd/VM do monitor somente após `SOAK-001` liberar o host.
 
 ## API read-only
 
@@ -141,30 +143,30 @@ GET /api/v1/generators/{id}/events
 | MON-002 | DONE | API read-only. |
 | MON-003 | DONE | Profiles. |
 | MON-004 | DONE | RapidScadaProvider. |
-| MON-005 | IN_PROGRESS | Rapid Web + semântica + E2E; aguarda gates. |
-| MON-006 | IN_PROGRESS | Hardening/release/observabilidade; aguarda gates. |
-| MON-007 | NEXT | Restart/recovery/soak do rc-monitor. |
+| MON-005 | DONE | Rapid Web + semântica + E2E; CI #144 + CodeQL #71. |
+| MON-006 | DONE | Hardening/release/observabilidade; CI #144 + CodeQL #71. |
+| MON-007 | IN_PROGRESS | Restart/recovery/soak do processo rc-monitor em software. |
 | HIL-001 | BLOCKED | Primeira controladora real read-only. |
 | HIL-002 | BLOCKED | Modem/VPN/meio físico. |
 | CMD-001 | DEFERRED | Writes só após HIL/interlocks/auditoria. |
-| UI-001 | TODO | Congelar contrato frontend. |
+| UI-001 | NEXT | Congelar contrato frontend após MON-007 software. |
 | UI-002 | TODO | Shell visual. |
 | UI-003 | TODO | Telas + API real. |
 | UI-004 | TODO | Testes frontend. |
 | REL-001 | TODO | Confirmar proteção de main. |
-| REL-002 | IN_PROGRESS | Release inclui monitor; aguarda release gate. |
+| REL-002 | DONE | Release inclui rc-monitor e passou gate reprodutível/dry-run. |
 | PROD-001 | BLOCKED | Exige SEM + HIL + soak + aprovação. |
 <!-- CHECKLIST_END -->
 
 ## Próximo passo exato
 
 ```text
-1. fast-forward feature/monitor-core para o HEAD desta branch temporária;
-2. executar Gateway CI + CodeQL;
-3. corrigir o próximo gate sem tocar na VM;
-4. com ambos verdes, fechar MON-005/MON-006;
-5. implementar/validar MON-007 em software;
-6. somente após SOAK-001, executar SEM-001 e validação do rc-monitor na VM.
+1. sincronizar tmp-backend-finish com este HEAD;
+2. implementar gate de lifecycle/restart do processo rc-monitor;
+3. adicionar esse gate ao CI junto do E2E Rapid outage/recovery já existente;
+4. atualizar este handoff depois da última mudança material;
+5. promover por fast-forward e exigir Gateway CI + CodeQL verdes;
+6. manter a VM intocada até SOAK-001 terminar.
 ```
 
 `PRODUCTION_VALIDATED=false`.
