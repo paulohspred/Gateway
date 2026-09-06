@@ -231,6 +231,52 @@ type ProviderHealth struct {
 	Message   string         `json:"message,omitempty"`
 }
 
+func IsKnownMetricKey(key MetricKey) bool {
+	switch key {
+	case MetricEngineRPM,
+		MetricEngineOilPressure,
+		MetricEngineCoolantTemp,
+		MetricEngineRunHours,
+		MetricGeneratorVoltageL1,
+		MetricGeneratorVoltageL2,
+		MetricGeneratorVoltageL3,
+		MetricGeneratorFrequency,
+		MetricGeneratorCurrentL1,
+		MetricGeneratorPowerKW,
+		MetricGeneratorPowerKVA,
+		MetricGeneratorPowerKVAR,
+		MetricGeneratorPowerFactor,
+		MetricMainsVoltageL1,
+		MetricMainsFrequency,
+		MetricControllerMode,
+		MetricBreakerGCB,
+		MetricBreakerMCB,
+		MetricBatteryVoltage,
+		MetricFuelLevel:
+		return true
+	default:
+		return false
+	}
+}
+
+func IsValidValueKind(kind ValueKind) bool {
+	switch kind {
+	case ValueNumber, ValueText, ValueBoolean:
+		return true
+	default:
+		return false
+	}
+}
+
+func IsValidAlarmSeverity(severity AlarmSeverity) bool {
+	switch severity {
+	case AlarmInfo, AlarmWarning, AlarmCritical:
+		return true
+	default:
+		return false
+	}
+}
+
 func validQuality(q Quality) bool {
 	switch q {
 	case QualityGood, QualityStale, QualityOffline, QualityBad, QualityUnknown:

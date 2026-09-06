@@ -73,7 +73,7 @@ done <<< "$checklist"
 duplicates="$(printf '%s\n' "$checklist" | cut -f1 | sort | uniq -d)"
 [[ -z "$duplicates" ]] || fail "IDs duplicados no checklist: $duplicates"
 
-for required_id in GW-001 VM-001 VM-006 VM-007 SOAK-001 SEM-001 MON-001 MON-002 MON-004 HIL-001 UI-001 PROD-001; do
+for required_id in GW-001 VM-001 VM-006 VM-007 SOAK-001 SEM-001 MON-001 MON-002 MON-003 MON-004 HIL-001 UI-001 PROD-001; do
   [[ -n "$(status_of "$required_id")" ]] || fail "task obrigatória ausente do checklist: $required_id"
 done
 
@@ -97,16 +97,13 @@ if [[ "$production_validated" == "true" ]]; then
   done
 fi
 
-# O handoff precisa ter sido atualizado no mesmo commit material ou em commit
-# posterior. Em PRs o checkout é um merge sintético; por isso a comparação usa
-# explicitamente a branch head quando ela estiver disponível.
 TRACK_REF="HEAD"
 if [[ -n "${GITHUB_HEAD_REF:-}" ]] && git rev-parse --verify "origin/${GITHUB_HEAD_REF}" >/dev/null 2>&1; then
   TRACK_REF="origin/${GITHUB_HEAD_REF}"
 fi
 
 material_paths=(
-  cmd internal configs catalog scripts systemd backend frontend web ui api
+  cmd internal configs catalog controllers scripts systemd backend frontend web ui api
   go.mod go.sum .github/workflows
 )
 latest_material_commit="$(git log -1 --format=%H "$TRACK_REF" -- "${material_paths[@]}" || true)"
@@ -117,8 +114,6 @@ if [[ -n "$latest_material_commit" ]] && ! git merge-base --is-ancestor "$latest
   fail "$DOC está mais antigo que a última mudança material ($latest_material_commit); atualize o handoff depois da mudança"
 fi
 
-# O conjunto proposto também precisa conter o handoff quando há mudança material
-# em relação à base do PR/main. Este gate mantém o motivo explícito no diff.
 if [[ -n "${GITHUB_BASE_REF:-}" ]] && git rev-parse --verify "origin/${GITHUB_BASE_REF}" >/dev/null 2>&1; then
   BASE="origin/${GITHUB_BASE_REF}"
 elif [[ "${GITHUB_REF_NAME:-}" != "main" ]] && git rev-parse --verify origin/main >/dev/null 2>&1; then
@@ -131,7 +126,7 @@ else
 fi
 
 changed="$(git diff --name-only "$BASE"..."$TRACK_REF")"
-source_changed="$(printf '%s\n' "$changed" | grep -E '^(cmd/|internal/|configs/|catalog/|scripts/|systemd/|backend/|frontend/|web/|ui/|api/|go\.(mod|sum)$|\.github/workflows/)' || true)"
+source_changed="$(printf '%s\n' "$changed" | grep -E '^(cmd/|internal/|configs/|catalog/|controllers/|scripts/|systemd/|backend/|frontend/|web/|ui/|api/|go\.(mod|sum)$|\.github/workflows/)' || true)"
 doc_changed="$(printf '%s\n' "$changed" | grep -Fx "$DOC" || true)"
 
 if [[ -n "$source_changed" && -z "$doc_changed" ]]; then
