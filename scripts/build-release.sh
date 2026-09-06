@@ -39,6 +39,10 @@ for arch in $ARCHES; do
   cp README.md SECURITY.md SUPPORT.md CHANGELOG.md LICENSE NOTICE THIRD_PARTY_NOTICES.md "$stage/"
   chmod 0755 "$stage/bin/rc-gateway" "$stage/bin/rc-monitor" "$stage/scripts/"*.sh
 
+  "$stage/bin/rc-monitor" --check-config --config "$stage/configs/monitor/rc-monitor.fake.json"
+  "$stage/bin/rc-monitor" --check-config --config "$stage/configs/monitor/rc-monitor.synthetic.json"
+  "$stage/scripts/install-rc-monitor.sh" --dry-run "$stage/configs/monitor/rc-monitor.fake.json"
+
   printf '%s\n' "$VERSION" > "$stage/VERSION"
   {
     printf 'product=rc-gateway\n'
