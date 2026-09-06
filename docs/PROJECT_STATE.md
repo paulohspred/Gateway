@@ -76,17 +76,31 @@ MON-005 inclui Rapid Web API, semântica de métricas/alarmes/eventos, E2E, outa
 
 A validação systemd/VM do `rc-monitor` permanece externa e só pode começar depois de `SOAK-001` liberar o host.
 
-## HARD-001 — NEXT
+## HARD-001 — IN_PROGRESS
 
-Débito operacional restante antes de ampliar homologação:
+Candidato de least privilege montado em `tmp-backend-finish`:
 
-- codificar no installer do stack o hardening non-root de `scadacomm6` já comprovado manualmente na VM;
-- usuário dedicado `scadacomm`;
-- evitar `chown -R` amplo sobre a árvore Rapid;
-- conceder somente os diretórios de runtime/log/config que realmente precisam de escrita;
-- preservar `NoNewPrivileges`, `PrivateTmp`, `ProtectHome`, capability set vazio e `UMask=0027` já homologados;
-- manter idempotência e recovery do installer;
-- provar por testes de contrato sem alterar a VM durante o soak.
+```text
+6c4c94077369dafc7175d57e570f677d70c4e1ae
+  installer: harden ScadaComm as non-root
+
+5702cb5bbc815715a3f68b7e5767903d907b2d2a
+  test: enforce ScadaComm non-root installer contract
+```
+
+O hardening codificado preserva o baseline já homologado manualmente na VM e evita ownership amplo:
+
+- cria usuário/grupo de sistema dedicado `scadacomm` de forma idempotente;
+- grava drop-in de `scadacomm6.service` com `User=scadacomm`, `Group=scadacomm`, `NoNewPrivileges=true`, `PrivateTmp=true`, `ProtectHome=true`, capability sets vazios e `UMask=0027`;
+- mantém a árvore `/opt/scada` sob ownership do pacote/root; o installer não executa `chown -R /opt/scada`;
+- configura `ScadaInstanceConfig.xml` para usar `/var/log/scada` como raiz de logs;
+- concede escrita somente a `/var/log/scada/ScadaComm/Log`, mantendo os diretórios de aplicação/config/driver como leitura;
+- após restart, verifica `scadacomm6.service` ativo, usuário efetivo `scadacomm`, leitura do worker/config e escrita no diretório de log dedicado;
+- o teste de contrato exige as diretivas de hardening e falha se houver ownership recursivo da árvore Rapid.
+
+Base técnica Rapid 6.4.7 usada na decisão: `CommDirs` exige `Lang`, `Log` e `Drv`; `Manager` carrega `ScadaInstanceConfig.xml` e aplica `LogDir`; a documentação Linux upstream define `/var/log/scada` como diretório de logs. Não foi identificada necessidade de tornar `/opt/scada` gravável pelo Communicator.
+
+HARD-001 permanece `IN_PROGRESS` até este candidato ser promovido para `feature/monitor-core` e Gateway CI + CodeQL ficarem verdes no mesmo HEAD.
 
 ## API read-only
 
@@ -117,7 +131,7 @@ GET /api/v1/generators/{id}/events
 | VM-005 | DONE | Cold boot. |
 | VM-006 | DONE | ScadaComm non-root. |
 | VM-007 | DONE | Cold boot pós-non-root. |
-| HARD-001 | NEXT | Codificar hardening ScadaComm non-root no installer com least privilege/idempotência. |
+| HARD-001 | IN_PROGRESS | Installer ScadaComm non-root least-privilege; aguarda gates. |
 | SOAK-001 | IN_PROGRESS | Soak 24 h da VM. |
 | SEM-001 | TODO | Binding semântico com canais Rapid reais. |
 | MON-001 | DONE | Foundation. |
@@ -130,7 +144,7 @@ GET /api/v1/generators/{id}/events
 | HIL-001 | BLOCKED | Primeira controladora real read-only. |
 | HIL-002 | BLOCKED | Modem/VPN/meio físico. |
 | CMD-001 | DEFERRED | Writes só após HIL/interlocks/auditoria. |
-| UI-001 | TODO | Congelar contrato frontend após hardening operacional. |
+| UI-001 | NEXT | Congelar contrato frontend após hardening operacional. |
 | UI-002 | TODO | Shell visual. |
 | UI-003 | TODO | Telas + API real. |
 | UI-004 | TODO | Testes frontend. |
@@ -142,12 +156,12 @@ GET /api/v1/generators/{id}/events
 ## Próximo passo exato
 
 ```text
-1. sincronizar tmp-backend-finish com este HEAD;
-2. revisar install-scada-stack.sh e testes do installer;
-3. implementar HARD-001 sem chown amplo e com unit drop-in least-privilege;
-4. atualizar este handoff depois da mudança material;
-5. promover por fast-forward e exigir Gateway CI + CodeQL verdes;
-6. manter a VM intocada até SOAK-001 terminar.
+1. fast-forward feature/monitor-core para o HEAD deste candidato;
+2. exigir Gateway CI + CodeQL verdes no mesmo HEAD;
+3. confirmar teste de contrato do installer e release reprodutível;
+4. se verdes, marcar HARD-001 DONE;
+5. manter a VM intocada até SOAK-001 terminar;
+6. depois do soak, executar SEM-001 e validações systemd/VM pendentes.
 ```
 
 `PRODUCTION_VALIDATED=false`.
