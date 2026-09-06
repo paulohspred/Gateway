@@ -1,6 +1,6 @@
 # RC Monitor Frontend — índice da especificação
 
-Status: **UI-001 / definição antes da implementação**.
+Status: **UI-001 congelado; implementação real autorizada pelo proprietário**.
 
 Este é o ponto de entrada para qualquer trabalho futuro de frontend. Nenhuma tela deve ser implementada ignorando estes contratos.
 
@@ -34,14 +34,26 @@ Este é o ponto de entrada para qualquer trabalho futuro de frontend. Nenhuma te
    - proibição de métricas inventadas no navegador.
 
 5. [`GENERATOR_DETAIL_CONTRACT.md`](./GENERATOR_DETAIL_CONTRACT.md)
-   - congela a primeira HMI principal antes de React;
+   - congela a primeira HMI principal antes da implementação;
    - define regiões, wireframe e hierarquia operacional;
    - mapeia cada bloco aos endpoints e MetricKeys reais;
    - define comportamento para `good`, `stale`, `offline`, `bad`, `unknown`, ausência e zero real;
    - proíbe inferências elétricas e industriais não sustentadas;
    - identifica o pequeno gap read-only de capability/profile necessário para uma UI adaptativa profissional.
 
-## Ordem de execução
+## Autorização de implementação
+
+Em 2026-09-06 o proprietário determinou explicitamente que a próxima entrega deve ser **o frontend funcional no repositório**, e não imagens/mockups gerados.
+
+Portanto:
+
+- `GENERATOR_DETAIL_CONTRACT.md` e os contratos de produto são a referência normativa;
+- imagens fornecidas anteriormente continuam `REFERENCE_ONLY` para identidade visual;
+- mockup gerado por imagem **não é gate de implementação**;
+- esta decisão supersede o requisito de mockup obrigatório descrito nas seções finais de `GENERATOR_DETAIL_CONTRACT.md`;
+- qualquer divergência estrutural futura continua exigindo atualização prévia do contrato.
+
+## Ordem de execução atual
 
 ```text
 inventário auditado
@@ -54,40 +66,28 @@ catálogo de telemetria/ECU
       ↓
 contrato Detalhe do Gerador
       ↓
-mockup Detalhe do Gerador
+shell + design system real
       ↓
-aprovação visual
+vertical Geradores -> Detalhe integrada ao backend read-only
       ↓
-wireframe/mockup Visão Geral
+Visão Geral / Alarmes / Eventos / Comunicação
       ↓
-aprovação visual
+regressão funcional e responsiva
       ↓
-shell + design system
-      ↓
-vertical Geradores -> Detalhe integrada ao backend real
-      ↓
-regressão visual
-      ↓
-expansão das demais telas
+expansão das demais telas conforme backend real
 ```
 
 ## Gate de implementação
 
-React ainda não está autorizado por estes documentos sozinho.
+A implementação pode avançar desde que:
 
-Antes de iniciar a implementação das telas principais devem existir duas referências de layout aprovadas:
-
-- **Detalhe do Gerador**;
-- **Visão Geral**.
-
-Cada referência precisa indicar:
-
-- regiões fixas da tela;
-- dados reais usados em cada região;
-- comportamento para `good`, `stale`, `offline`, `bad`, `unknown` e ausência;
-- elementos futuros que ficam ocultos/desabilitados;
-- resolução desktop de referência;
-- comportamento responsivo esperado.
+- use somente endpoints realmente existentes;
+- não invente dados para preencher layout;
+- preserve `good`, `stale`, `offline`, `bad`, `unknown`, ausência e zero real;
+- não exponha ações industriais de escrita nesta fase;
+- mantenha os registradores físicos fora do frontend/RC Monitor;
+- possua typecheck, testes e build automatizados;
+- qualquer função que dependa de backend inexistente permaneça ausente, não simulada como funcional.
 
 ## Regra de mudança
 
