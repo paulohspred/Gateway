@@ -3,7 +3,7 @@
 <!-- PROJECT_STATE_SCHEMA: 2 -->
 <!-- CANONICAL_HANDOFF: true -->
 <!-- CURRENT_CODE_BRANCH: feature/monitor-core -->
-<!-- CURRENT_DEVELOPMENT_TASK: MON-007 -->
+<!-- CURRENT_DEVELOPMENT_TASK: HARD-001 -->
 <!-- EXTERNAL_RUNNING_GATE: SOAK-001 -->
 <!-- PRODUCTION_VALIDATED: false -->
 <!-- PR2_MUST_REMAIN_DRAFT: true -->
@@ -63,42 +63,30 @@ MON-005 DONE + MON-006 DONE
   HEAD: 67a0776565410e2513f44bab98185f774607c6ed
   Gateway CI #144: SUCCESS
   CodeQL #71: SUCCESS
+
+MON-007 DONE (software)
+  HEAD: b49d287cdad630abbd10461d10632d936d679096
+  Gateway CI #146: SUCCESS
+  CodeQL #73: SUCCESS
+  RC Monitor Rapid outage and recovery: SUCCESS
+  RC Monitor process restart lifecycle, 20 ciclos: SUCCESS
 ```
 
-MON-005 inclui Rapid Web API, semântica de métricas/alarmes/eventos, E2E, outage/recovery e mini-soak. MON-006 inclui config estrita, secrets por env, observabilidade local, systemd non-root, installer e release reprodutível.
+MON-005 inclui Rapid Web API, semântica de métricas/alarmes/eventos, E2E, outage/recovery e mini-soak. MON-006 inclui config estrita, secrets por env, observabilidade local, systemd non-root, installer e release reprodutível. MON-007 prova lifecycle do binário real, graceful SIGTERM/restart, recovery Rapid e mini-soak em software.
 
-## MON-007 — IN_PROGRESS
+A validação systemd/VM do `rc-monitor` permanece externa e só pode começar depois de `SOAK-001` liberar o host.
 
-Candidato software montado em `tmp-backend-finish`:
+## HARD-001 — NEXT
 
-```text
-bd37bd72f8a0a4fe6d1244a2ca6aeec4a8560f45
-  adiciona scripts/test-rc-monitor-process-recovery.sh
+Débito operacional restante antes de ampliar homologação:
 
-cc01d90ea37e7bfa6be7f22a12a5bd4b5eb3b809
-  integra gate ao job Impairment and mini-soak
-```
-
-O gate de processo:
-
-1. compila o binário real `cmd/rc-monitor`;
-2. usa bind loopback em porta efêmera por processo;
-3. executa 20 ciclos por padrão;
-4. em cada ciclo prova `/healthz`, `/readyz`, `/api/v1/generators` e `/metrics`;
-5. envia `SIGTERM` e exige exit status 0;
-6. exige que o listener deixe de responder;
-7. reinicia na mesma porta e repete.
-
-No mesmo job de CI, o gate Rapid executa explicitamente:
-
-```text
-TestRapidWebSemanticPipelineEndToEnd
-TestRapidWebSemanticPipelineMiniSoak
-```
-
-Esses testes cobrem online, stale, outage, last-known offline, recuperação, zero real, ausência, alarmes/eventos e 250 ciclos.
-
-MON-007 só vira `DONE` em software após promoção para `feature/monitor-core` e Gateway CI + CodeQL verdes no mesmo HEAD. Validação systemd/VM do monitor continua bloqueada até `SOAK-001` liberar o host.
+- codificar no installer do stack o hardening non-root de `scadacomm6` já comprovado manualmente na VM;
+- usuário dedicado `scadacomm`;
+- evitar `chown -R` amplo sobre a árvore Rapid;
+- conceder somente os diretórios de runtime/log/config que realmente precisam de escrita;
+- preservar `NoNewPrivileges`, `PrivateTmp`, `ProtectHome`, capability set vazio e `UMask=0027` já homologados;
+- manter idempotência e recovery do installer;
+- provar por testes de contrato sem alterar a VM durante o soak.
 
 ## API read-only
 
@@ -129,7 +117,7 @@ GET /api/v1/generators/{id}/events
 | VM-005 | DONE | Cold boot. |
 | VM-006 | DONE | ScadaComm non-root. |
 | VM-007 | DONE | Cold boot pós-non-root. |
-| HARD-001 | TODO | Codificar hardening ScadaComm non-root no installer. |
+| HARD-001 | NEXT | Codificar hardening ScadaComm non-root no installer com least privilege/idempotência. |
 | SOAK-001 | IN_PROGRESS | Soak 24 h da VM. |
 | SEM-001 | TODO | Binding semântico com canais Rapid reais. |
 | MON-001 | DONE | Foundation. |
@@ -138,11 +126,11 @@ GET /api/v1/generators/{id}/events
 | MON-004 | DONE | RapidScadaProvider. |
 | MON-005 | DONE | Rapid Web + semântica + E2E; CI #144 + CodeQL #71. |
 | MON-006 | DONE | Hardening/release/observabilidade; CI #144 + CodeQL #71. |
-| MON-007 | IN_PROGRESS | Candidato restart/recovery/soak do processo rc-monitor; aguarda gates. |
+| MON-007 | DONE | Restart/recovery/mini-soak software; CI #146 + CodeQL #73. |
 | HIL-001 | BLOCKED | Primeira controladora real read-only. |
 | HIL-002 | BLOCKED | Modem/VPN/meio físico. |
 | CMD-001 | DEFERRED | Writes só após HIL/interlocks/auditoria. |
-| UI-001 | NEXT | Congelar contrato frontend após MON-007 software. |
+| UI-001 | TODO | Congelar contrato frontend após hardening operacional. |
 | UI-002 | TODO | Shell visual. |
 | UI-003 | TODO | Telas + API real. |
 | UI-004 | TODO | Testes frontend. |
@@ -154,12 +142,12 @@ GET /api/v1/generators/{id}/events
 ## Próximo passo exato
 
 ```text
-1. fast-forward feature/monitor-core para o HEAD desta branch temporária;
-2. exigir Gateway CI + CodeQL verdes;
-3. confirmar os novos passos RC Monitor Rapid outage/recovery e process restart lifecycle;
-4. se verdes, marcar MON-007 software DONE;
-5. manter a VM intocada até SOAK-001 terminar;
-6. depois do soak, executar SEM-001 e validação systemd/VM do rc-monitor.
+1. sincronizar tmp-backend-finish com este HEAD;
+2. revisar install-scada-stack.sh e testes do installer;
+3. implementar HARD-001 sem chown amplo e com unit drop-in least-privilege;
+4. atualizar este handoff depois da mudança material;
+5. promover por fast-forward e exigir Gateway CI + CodeQL verdes;
+6. manter a VM intocada até SOAK-001 terminar.
 ```
 
 `PRODUCTION_VALIDATED=false`.
