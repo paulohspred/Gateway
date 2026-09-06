@@ -8,21 +8,19 @@
 <!-- PRODUCTION_VALIDATED: false -->
 <!-- PR2_MUST_REMAIN_DRAFT: true -->
 
-> **REGRA OBRIGATÓRIA:** este é o documento canônico de continuidade. Qualquer novo chat, IA ou mantenedor deve ler este arquivo antes de alterar código, arquitetura, segurança, Rapid SCADA, backend ou frontend. Mudança material deve ser seguida por atualização deste arquivo e passar `scripts/check-project-state-updated.sh`.
+> **REGRA OBRIGATÓRIA:** este arquivo é o handoff canônico. Novo chat, IA ou mantenedor deve lê-lo antes de alterar código, arquitetura, segurança, Rapid SCADA, backend ou frontend. Mudança material exige atualização deste arquivo e `scripts/check-project-state-updated.sh` verde.
 
-## 1. Procedimento obrigatório
+## 1. Regras de continuidade
 
 1. confirmar `paulohspred/Gateway`, branch e HEAD reais;
-2. ler este arquivo inteiro;
-3. seguir o **Checklist canônico**;
-4. não alterar `main` nem mesclar PR sem autorização explícita do proprietário;
-5. não declarar `DONE` sem evidência reproduzível;
-6. registrar mudança, evidência, risco residual e próximo passo;
-7. executar checker/CI/CodeQL;
-8. nunca registrar segredos;
-9. nunca declarar produção antes dos gates externos.
+2. seguir o checklist abaixo;
+3. não alterar `main` nem mesclar PR sem autorização explícita do proprietário;
+4. não marcar `DONE` sem evidência reproduzível;
+5. registrar mudança, evidência, risco residual e próximo passo;
+6. nunca registrar segredos;
+7. nunca declarar produção antes dos gates externos.
 
-Status: `DONE`, `IN_PROGRESS`, `NEXT`, `TODO`, `BLOCKED`, `DEFERRED`.
+Status válidos: `DONE`, `IN_PROGRESS`, `NEXT`, `TODO`, `BLOCKED`, `DEFERRED`.
 
 ## 2. Arquitetura fixa — NÃO quebrar
 
@@ -34,80 +32,54 @@ NO TELEMETRY HISTORIAN
 ```
 
 ```text
-Controladora / modem / serial / TCP / VPN / USB / CAN
-                         |
-                         v
-                    RC GATEWAY
-             transporte industrial
-                         |
-                         v
-                  RAPID SCADA 6
-        protocolo + registradores + polling
-              + qualidade + histórico SCADA
-                         |
-                         v
-                    RC MONITOR
-          domínio do gerador + API + segurança
-                         |
-                         v
-                     FRONTEND
-                 interface do operador
+campo/controladora/modem/VPN/serial/TCP/USB/CAN
+                    -> RC GATEWAY
+                       transporte
+                    -> RAPID SCADA 6
+                       protocolo + registradores + polling + qualidade + histórico
+                    -> RC MONITOR
+                       domínio + API + segurança
+                    -> FRONTEND
+                       apresentação
 ```
 
 Invariantes:
 
-- Gateway transporta bytes/datagramas/frames/HID reports; não inventa register map.
-- Transporte não implica conversão semântica.
-- Não existe conversão automática Modbus RTU <-> TCP nem ComAp Direct <-> Modbus.
-- `length32be` é framing de transporte.
-- Gateway não é historian, banco de telemetria, broker nem SCADA.
-- Rapid SCADA interpreta protocolo/aplicação e mantém o histórico SCADA.
-- `rc-monitor` não reimplementa bridge, Modbus ou register maps físicos.
-- frontend consome métricas normalizadas, não Function Code/registradores.
-- zero real permanece zero; métrica ausente nunca é inventada como zero.
+- Gateway transporta bytes/datagramas/frames/HID reports e não inventa register map;
+- transporte não implica conversão semântica;
+- não existe conversão automática Modbus RTU <-> TCP nem ComAp Direct <-> Modbus;
+- `length32be` é framing de transporte;
+- Gateway não é historian, banco de telemetria, broker nem SCADA;
+- Rapid SCADA interpreta protocolo/aplicação;
+- `rc-monitor` não reimplementa bridge/Modbus/register maps físicos;
+- frontend consome métricas normalizadas;
+- zero real permanece zero; métrica ausente permanece ausente.
 
-## 3. Repositório, branches e PRs
-
-```text
-repo: github.com/paulohspred/Gateway
-```
-
-`main`: não alterar diretamente; merge somente com autorização explícita do proprietário.
-
-### Gateway hardening
+## 3. Branches e PRs
 
 ```text
-branch: hardening/standalone-10x
-HEAD registrado: 494c2a7e19cda62fecac0c142bc87091ca0ac061
-PR #2 -> main
-base SHA histórico: e0f2ecdafc5ee065428b442575fee5a9d5ab0a11
+repo: paulohspred/Gateway
+
+hardening/standalone-10x
+  HEAD registrado: 494c2a7e19cda62fecac0c142bc87091ca0ac061
+  PR #2 -> main
+  PR #2 deve permanecer open/draft/not-merged
+
+feature/monitor-core
+  base de criação: 494c2a7e19cda62fecac0c142bc87091ca0ac061
+  PR #3 -> hardening/standalone-10x
+  PR #3 deve permanecer draft
 ```
 
-PR #2 deve permanecer `open=true`, `draft=true`, `merged=false`.
+Não mesclar PR #2 ou #3 em `main` sem ordem explícita.
 
-### RC Monitor
+## 4. Gateway + Rapid SCADA já comprovados
 
-```text
-branch: feature/monitor-core
-base de criação: 494c2a7e19cda62fecac0c142bc87091ca0ac061
-PR #3 -> hardening/standalone-10x
-PR #3: draft
-```
+Rapid baseline: **6.4.7**, source analisado `1fd36080c7830303f921672fdaee335a06e7ae50`.
 
-Não mesclar PR #3 em `main`.
+Gateway possui TCP/TLS/Unix/serial/UDP/CAN/HID, framing explícito, limites/timeouts/allowlists, JSON estrito, admin loopback-only, command plane desabilitado, health/readiness/status/sessions/metrics, systemd notify/watchdog, installers, amd64/arm64, SBOM/provenance e gates CI/CodeQL.
 
-## 4. Gateway/Rapid já comprovados
-
-Gateway possui transportes TCP/TLS/Unix/serial/UDP/CAN/HID, framing explícito, limites, timeouts, allowlists, JSON estrito, admin loopback-only, command plane desabilitado, health/readiness/status/sessions/metrics, systemd notify/watchdog, installers, amd64/arm64, SBOM/provenance e gates CI/CodeQL.
-
-Rapid baseline:
-
-```text
-Rapid SCADA 6.4.7
-source analisado: 1fd36080c7830303f921672fdaee335a06e7ae50
-```
-
-Integração atual: `DrvCnlBasic` TCP client + `DrvModbus` com `TransMode` coerente ao payload; Gateway entrega transporte, Rapid interpreta.
+Integração Rapid: `DrvCnlBasic` TCP client + `DrvModbus`; Gateway entrega transporte, Rapid interpreta.
 
 ## 5. VM de homologação
 
@@ -123,11 +95,9 @@ source pin do binário: ac5c98e047e752539e7844dfa7d9d3d69565a6e6
 
 **Não afirmar que a VM executa 494c2a7.** O branch avançou depois.
 
-Firewall persistente protege Rapid 10000/10002 para loopback. `scadacomm6` foi homologado non-root como `scadacomm`, com `NoNewPrivileges`, `PrivateTmp`, `ProtectHome`, caps vazias e `UMask=0027`; logs em `/var/log/scada/ScadaComm/Log`. Cold boot pós-non-root passou.
+Firewall persistente protege Rapid 10000/10002 para loopback. `scadacomm6` foi homologado non-root como `scadacomm`, com `NoNewPrivileges`, `PrivateTmp`, `ProtectHome`, caps vazias e `UMask=0027`; logs em `/var/log/scada/ScadaComm/Log`. Cold boot pós-non-root passou. Pendente codificar esse hardening no installer sem `chown` amplo.
 
-Pendente codificar esse hardening no installer sem `chown` amplo.
-
-## 6. Integração VM já aprovada
+## 6. Integração VM aprovada
 
 ```text
 client -> 127.0.0.1:25020 -> RC Gateway -> 127.0.0.1:15020 -> simulator
@@ -137,13 +107,11 @@ FC03 retornou `[2300, 2310, 2290, 5000, 1500, 805, 1250, 150, 1500, 1]`.
 
 Rapid Line 99 usa `DrvCnlBasic`, `DrvModbus`, `TransMode=TCP`, Unit ID 1, `CmdEnabled=false`, template read-only e `<Cmds />` vazio. Polling FC03 via Gateway passou.
 
-**Limite:** `isBound=false`; transporte está comprovado, binding semântico de canais ainda não.
+**Limite:** line/device usam `isBound=false`; transporte está comprovado, binding semântico ainda não.
 
-Recovery aprovados: field outage, blackhole, restart Rapid/Gateway, cold boot, cold boot pós-non-root e production preflight non-root.
+Recovery já aprovados: field outage, blackhole, restart Rapid/Gateway, cold boot, cold boot pós-non-root e production preflight non-root.
 
-## 7. Soak 24 h — EM EXECUÇÃO
-
-Task `SOAK-001`:
+## 7. SOAK-001 — 24 h em execução
 
 ```text
 inicio: 2026-09-05T23:47:29Z
@@ -152,9 +120,9 @@ duração: 86400 s
 fim esperado: 2026-09-06T23:47:29Z
 ```
 
-Última evidência registrada: ready, sessão e bytes OK; NRestarts 0; user `scadacomm`; events apenas `SOAK START`; preflight não-disruptivo PASS.
+Última evidência registrada: ready/sessão/bytes OK, NRestarts 0, user `scadacomm`, events somente `SOAK START`, preflight não-disruptivo PASS.
 
-Para `DONE`, relatório precisa conter:
+Para `DONE` o relatório deve conter:
 
 ```text
 result=PASS
@@ -167,60 +135,33 @@ session_id_changes=0
 counter_regressions=0
 ```
 
-Depois repetir production preflight com non-root requerido e `DISRUPTIVE=0`.
+Depois repetir production preflight non-root com `DISRUPTIVE=0`. Não alterar/reiniciar a VM durante o soak.
 
-## 8. Referências externas — somente referência
+## 8. Referências externas
 
 ### Genmon
 
-`jgyates/genmon` é referência funcional/de domínio: controller abstraction, profiles, status, alarmes, eventos e organização por controlador.
+`jgyates/genmon` serve como referência funcional: controller abstraction, profiles, status, alarmes e eventos.
 
-**Política de licença:** os JSON de `genmon/data/controller` são parte de projeto GPLv2 e não são copiados para este repositório proprietário. O inventário factual de fabricantes/modelos pode orientar o roadmap. Perfis RC reais devem ser escritos independentemente a partir de documentação de fabricante permitida e/ou evidência HIL.
+Os JSON de `genmon/data/controller` são material GPLv2 e **não são copiados** para este repositório proprietário. `controllers/REFERENCE_CATALOG.md` registra somente o inventário factual de famílias/modelos visto lá como `REFERENCE_ONLY`: Basler DGC-2020HD, Briggs & Stratton GC-1032, ComAp, Deep Sea, Generac Evolution Liquid Cooled, Kohler APM603, MEBAY DCxx, Power Zone 410 e SmartGen HGM4000.
 
-O inventário de referência atual está em `controllers/REFERENCE_CATALOG.md` e inclui Basler DGC-2020HD, Briggs & Stratton GC-1032, ComAp, Deep Sea, Generac Evolution Liquid Cooled, Kohler APM603, MEBAY DCxx, Power Zone 410 e SmartGen HGM4000 como `REFERENCE_ONLY`.
+Perfil real RC só pode ser promovido com documentação permitida de fabricante e/ou evidência HIL, além do binding Rapid e teste semântico.
 
 ### ProjetoGerador
 
-`paulohspdev-cmyk/ProjetoGerador` não será modificado; serve apenas como referência visual/UX futura.
+`paulohspdev-cmyk/ProjetoGerador` não será modificado; referência visual/UX futura apenas.
 
-## 9. `MON-001` — foundation RC Monitor — DONE
+## 9. MON-001 — foundation — DONE
 
-Estrutura principal:
-
-```text
-internal/monitor/
-  model.go
-  provider.go
-  service.go
-  fake/
-```
-
-Domínio: `Generator`, `ControllerRef`, `MetricKey`, `MetricValue` tipado, `Quality`, `CommunicationState`, `TelemetrySnapshot`, `Alarm`, `Event`, `ProviderHealth`, interface `Provider` e `Service` provider-independent.
-
-Semântica: zero real permanece zero; métrica ausente é omitida; stale preserva last-known + `quality=stale`; offline usa `quality=offline`; `NaN/Inf` rejeitados.
-
-FakeProvider cobre online/offline/stale/alarme/recovery/cancelamento/not-found e ausência deliberada de `fuel.level`.
-
-Evidência:
+Criados `monitor` model/Provider/Service/FakeProvider. Semântica: valores number/text/bool, `good/stale/offline/bad/unknown`, ausência != zero, `NaN/Inf` rejeitados. FakeProvider cobre online/offline/stale/alarme/recovery/cancel/not-found.
 
 ```text
-commit: fd73a4952c7de992075440180a959fcae1b62860
+commit funcional: fd73a4952c7de992075440180a959fcae1b62860
 Gateway CI #122: SUCCESS
 CodeQL #49: SUCCESS
 ```
 
-## 10. `MON-002` — API read-only — DONE
-
-Implementado:
-
-```text
-cmd/rc-monitor/main.go
-cmd/rc-monitor/main_test.go
-internal/monitor/httpapi/server.go
-internal/monitor/httpapi/server_test.go
-```
-
-API:
+## 10. MON-002 — API read-only — DONE
 
 ```text
 GET /healthz
@@ -233,21 +174,17 @@ GET /api/v1/generators/{id}/events
 GET /api/v1/system/health
 ```
 
-Contrato: somente GET; 404 generator inexistente; 504 timeout provider; 408 request cancelado; 502 falha provider sem detalhe interno; métricas escalares; zero preservado; ausência preservada; `/healthz` liveness; `/readyz` exige provider healthy; headers no-store/nosniff; bind de desenvolvimento loopback-only em `127.0.0.1:18100`.
-
-Evidência final do HEAD que fechou `MON-002`:
+Somente GET; 404/408/502/504 estáveis; métricas escalares preservam zero/ausência; `/healthz` é liveness; `/readyz` exige provider healthy; servidor fake default em `127.0.0.1:18100` e rejeita bind não-loopback.
 
 ```text
-HEAD documental/API: 9bc9689c49469b9ad442a705bd6f883618c7e7a8
+HEAD de fechamento: 9bc9689c49469b9ad442a705bd6f883618c7e7a8
 Gateway CI #126: SUCCESS
 CodeQL #53: SUCCESS
 ```
 
-## 11. `MON-003` — Controller Profiles — IN_PROGRESS
+## 11. MON-003 — Controller Profiles — IN_PROGRESS
 
-Objetivo: criar um contrato original e fail-closed para perfis de controladoras sem copiar Genmon e sem colocar registradores no Gateway.
-
-Incremento atual criado:
+Estrutura criada:
 
 ```text
 controllers/
@@ -265,51 +202,54 @@ internal/monitor/profile/
   profile_test.go
 ```
 
-Schema v1:
+Schema v1 original e fail-closed:
 
-- `manifest.json`: fabricante, modelo, status, capabilities e paths dos componentes;
-- `telemetry.json`: apenas `monitor.MetricKey` canônicas, tipo, unidade, required e stale timeout;
-- `alarms.json`: códigos normalizados, severity e mensagem;
-- `ui.json`: agrupamento de métricas já declaradas;
-- JSON com campo desconhecido falha;
-- profile ID e schema precisam coincidir;
-- paths absolutos/traversal são rejeitados;
-- metric keys desconhecidas/duplicadas são rejeitadas;
-- UI não pode referenciar métrica não declarada nem repetir métrica entre seções;
-- alarmes duplicados/severity inválida são rejeitados;
-- o profile sintético tem `remoteControl=false`.
+- manifest identifica fabricante/modelo/status/capabilities e componentes;
+- telemetry usa somente `monitor.MetricKey` canônica + tipo/unidade/required/stale timeout;
+- alarms usa código normalizado/severity/mensagem;
+- UI só referencia métricas declaradas;
+- unknown JSON fields, profile ID/schema divergentes, path traversal/absolute path, metric key desconhecida/duplicada, UI inconsistente e alarm severity inválida falham;
+- synthetic profile usa `remoteControl=false`;
+- `controllers/` foi incluído no freshness checker do handoff.
 
-O pacote `monitor` agora expõe validadores de chaves/tipos/severity canônicos para o profile loader. O profile sintético serve como fixture e não representa hardware real/HIL.
+Histórico de validação deste incremento:
 
-**Status:** implementação criada; `MON-003` só vira `DONE` após CI + CodeQL verdes para o HEAD deste incremento.
+```text
+1608ec40e5ae02057ea46cea0b45ff93ebda9741
+Gateway CI #127: FAILURE somente em gofmt
+  internal/monitor/profile/model.go
+  internal/monitor/profile/profile_test.go
+Canonical state + workflow lint: PASS antes da falha
+```
 
-## 12. Próximas etapas do RC Monitor
+A correção de `gofmt` está sendo aplicada no incremento atual. `MON-003` só vira `DONE` quando CI + CodeQL do HEAD corrigido estiverem verdes.
 
-`MON-004`: `RapidScadaProvider` implementando `monitor.Provider` sem vazar detalhes Rapid para domínio/API. O binding específico por controladora ficará dentro de Controller Packs/profiles, nunca no Gateway.
+## 12. Próxima fila
 
-`MON-005`: provar `Rapid SCADA -> RapidScadaProvider -> monitor.Service -> /api/v1` com valores semanticamente vinculados.
+```text
+MON-004 RapidScadaProvider atrás de monitor.Provider
+MON-005 Rapid -> Provider -> Service -> API com semântica E2E
+MON-006 hardening rc-monitor: config/non-root/systemd/logs/observabilidade
+MON-007 restart/recovery/soak próprios do rc-monitor
+```
 
-`MON-006`: hardening do `rc-monitor`: config, non-root, systemd, logs, health/readiness e observabilidade.
-
-`MON-007`: restart/recovery/soak próprios do `rc-monitor`.
-
-Frontend somente após modelo, API, profiles, Rapid provider e semântica `absent/stale/offline/quality` estabilizados.
+Frontend somente após modelo/API/profiles/Rapid provider e `absent/stale/offline/quality` estabilizados.
 
 ## 13. Gates externos pendentes
 
-- `SEM-001`: canais Rapid vinculados/valores recuperados pelo backend;
-- HIL read-only por controladora/firmware/meio físico/VPN/modem;
-- soak 24 h mínimo e 7 d alvo;
-- comandos industriais continuam bloqueados até HIL/interlocks/autorização/auditoria.
+- `SEM-001`: canais Rapid vinculados e valores recuperados inequivocamente pelo backend;
+- HIL read-only por controladora/modelo/firmware/meio físico/VPN/modem;
+- soak mínimo 24 h e alvo 7 d;
+- START/STOP/transfer/reset/setpoints permanecem bloqueados até HIL/interlocks/autorização/auditoria.
 
 ```text
 implemented
-  -> software_validated
-  -> software_field_test_ready
-  -> vm_accepted
-  -> hil_accepted
-  -> soak_accepted
-  -> production_validated
+ -> software_validated
+ -> software_field_test_ready
+ -> vm_accepted
+ -> hil_accepted
+ -> soak_accepted
+ -> production_validated
 ```
 
 `PRODUCTION_VALIDATED=false`.
@@ -333,8 +273,8 @@ implemented
 | SOAK-001 | IN_PROGRESS | Soak 24 h; exige `.report` PASS + acceptance final. |
 | SEM-001 | TODO | E2E semântico Rapid com canais vinculados. |
 | MON-001 | DONE | Foundation/model/Provider/Service/FakeProvider; CI #122 + CodeQL #49 PASS. |
-| MON-002 | DONE | API read-only `/api/v1`; Gateway CI #126 + CodeQL #53 PASS. |
-| MON-003 | IN_PROGRESS | Controller Profile schema + loader fail-closed + profile sintético; CI/CodeQL pendentes. |
+| MON-002 | DONE | API read-only `/api/v1`; CI #126 + CodeQL #53 PASS. |
+| MON-003 | IN_PROGRESS | Controller Profile schema/loader/profile sintético; gofmt corrigido, novo CI pendente. |
 | MON-004 | NEXT | Implementar `RapidScadaProvider` atrás de `monitor.Provider`. |
 | MON-005 | TODO | Testar monitor contra Rapid real/sintético e fechar semântica E2E. |
 | MON-006 | TODO | Hardening monitor: non-root/systemd/config/logs/observabilidade. |
@@ -355,28 +295,25 @@ implemented
 
 ```text
 Concluir MON-003:
-- publicar o incremento Controller Profiles;
-- rodar CI/CodeQL do HEAD;
-- corrigir qualquer falha;
-- só então marcar MON-003 DONE;
-- depois iniciar MON-004 RapidScadaProvider.
+1. publicar correção gofmt;
+2. CI + CodeQL verdes no mesmo HEAD;
+3. marcar MON-003 DONE;
+4. iniciar MON-004 RapidScadaProvider.
 ```
 
-Durante `SOAK-001`, não reiniciar nem alterar a VM.
+## 16. Proibições atuais
 
-## 16. O que NÃO fazer
-
-- não copiar código ou controller JSON do Genmon para o produto proprietário;
+- não copiar código/controller JSON do Genmon;
 - não modificar ProjetoGerador;
 - não colocar Modbus/register maps no Gateway;
 - não transformar rc-monitor em bridge;
 - não inventar zero;
-- não tratar `REFERENCE_ONLY` como compatibilidade validada;
-- não habilitar command plane/writes industriais;
-- não tocar na VM durante o soak;
+- não tratar `REFERENCE_ONLY` como compatibilidade;
+- não habilitar writes industriais;
+- não tocar na VM durante SOAK-001;
 - não declarar produção antes dos gates;
 - não mesclar PR #2/#3 em `main` sem ordem explícita.
 
-## 17. Regra de manutenção
+## 17. Freshness gate
 
-Mudanças em `cmd/`, `internal/`, `configs/`, `catalog/`, `controllers/`, `scripts/`, `systemd/`, `.github/workflows/`, `go.mod/go.sum` ou futuro backend/frontend exigem handoff atualizado depois da última mudança material.
+Mudanças em `cmd/`, `internal/`, `configs/`, `catalog/`, `controllers/`, `scripts/`, `systemd/`, `.github/workflows/`, `go.mod/go.sum` ou futuro backend/frontend exigem `PROJECT_STATE.md` atualizado depois da última mudança material.

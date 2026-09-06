@@ -26,14 +26,14 @@ const (
 )
 
 type Manifest struct {
-	Schema       int          `json:"schema"`
-	ID           string       `json:"id"`
-	Manufacturer string       `json:"manufacturer"`
-	Model        string       `json:"model"`
-	DisplayName  string       `json:"displayName"`
+	Schema       int           `json:"schema"`
+	ID           string        `json:"id"`
+	Manufacturer string        `json:"manufacturer"`
+	Model        string        `json:"model"`
+	DisplayName  string        `json:"displayName"`
 	Status       ProfileStatus `json:"status"`
-	Capabilities Capabilities `json:"capabilities"`
-	Files        ProfileFiles `json:"files"`
+	Capabilities Capabilities  `json:"capabilities"`
+	Files        ProfileFiles  `json:"files"`
 }
 
 type Capabilities struct {

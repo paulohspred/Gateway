@@ -107,7 +107,7 @@ func TestUIRejectsUndefinedAndRepeatedMetrics(t *testing.T) {
 	undefined := UIFile{
 		Schema:    SchemaVersion,
 		ProfileID: "test.controller",
-		Sections: []UISection{{ID: "engine", Title: "Engine", Metrics: []monitor.MetricKey{monitor.MetricFuelLevel}}},
+		Sections:  []UISection{{ID: "engine", Title: "Engine", Metrics: []monitor.MetricKey{monitor.MetricFuelLevel}}},
 	}
 	if err := undefined.Validate("test.controller", telemetry); err == nil {
 		t.Fatal("expected undefined UI metric to be rejected")
