@@ -3,7 +3,7 @@
 <!-- PROJECT_STATE_SCHEMA: 2 -->
 <!-- CANONICAL_HANDOFF: true -->
 <!-- CURRENT_CODE_BRANCH: feature/monitor-core -->
-<!-- CURRENT_DEVELOPMENT_TASK: MON-003 -->
+<!-- CURRENT_DEVELOPMENT_TASK: MON-004 -->
 <!-- EXTERNAL_RUNNING_GATE: SOAK-001 -->
 <!-- PRODUCTION_VALIDATED: false -->
 <!-- PR2_MUST_REMAIN_DRAFT: true -->
@@ -182,9 +182,9 @@ Gateway CI #126: SUCCESS
 CodeQL #53: SUCCESS
 ```
 
-## 11. MON-003 — Controller Profiles — IN_PROGRESS
+## 11. MON-003 — Controller Profiles — DONE
 
-Estrutura criada:
+Estrutura original criada:
 
 ```text
 controllers/
@@ -202,40 +202,72 @@ internal/monitor/profile/
   profile_test.go
 ```
 
-Schema v1 original e fail-closed:
+Schema v1 fail-closed valida fabricante/modelo/status/capabilities, métricas canônicas, tipo/unidade/required/stale timeout, alarmes e agrupamento UI. Unknown JSON fields, IDs/schema divergentes, path traversal, métricas desconhecidas/duplicadas e UI inconsistente falham. Synthetic profile tem `remoteControl=false`.
 
-- manifest identifica fabricante/modelo/status/capabilities e componentes;
-- telemetry usa somente `monitor.MetricKey` canônica + tipo/unidade/required/stale timeout;
-- alarms usa código normalizado/severity/mensagem;
-- UI só referencia métricas declaradas;
-- unknown JSON fields, profile ID/schema divergentes, path traversal/absolute path, metric key desconhecida/duplicada, UI inconsistente e alarm severity inválida falham;
-- synthetic profile usa `remoteControl=false`;
-- `controllers/` foi incluído no freshness checker do handoff.
-
-Histórico de validação deste incremento:
+Histórico:
 
 ```text
 1608ec40e5ae02057ea46cea0b45ff93ebda9741
 Gateway CI #127: FAILURE somente em gofmt
-  internal/monitor/profile/model.go
-  internal/monitor/profile/profile_test.go
-Canonical state + workflow lint: PASS antes da falha
+
+46f50c2b606532bce638ad53fd7182467b38e723
+Gateway CI #128: SUCCESS
+CodeQL #55: SUCCESS
 ```
 
-A correção de `gofmt` está sendo aplicada no incremento atual. `MON-003` só vira `DONE` quando CI + CodeQL do HEAD corrigido estiverem verdes.
+A falha #127 foi somente formatação em `internal/monitor/profile/model.go` e `profile_test.go`; corrigida e integralmente revalidada no #128.
 
-## 12. Próxima fila
+## 12. MON-004 — RapidScadaProvider — IN_PROGRESS
+
+Decisão após revisar Rapid SCADA 6.4.7 upstream:
+
+- `ScadaCommon/Client/ScadaClient` é o cliente TCP oficial do Server e declara explicitamente que não é thread-safe;
+- `ScadaClient.GetCurrentData(int[] cnlNums, bool useCache, out long cnlListID)` e a variante cacheada existem para current channel data;
+- `ConnectionOptions` default usa host `localhost`, port `10000`, timeout 10000 ms;
+- Rapid `CnlData` considera status `> 0` definido e status `<= 0` indefinido.
+
+**Não reimplementar o protocolo Server do Rapid em Go.** O `RapidScadaProvider` usa uma interface estreita `Reader`; MON-005 conectará essa interface a um adapter local baseado nas bibliotecas suportadas do Rapid.
+
+Incremento em desenvolvimento:
 
 ```text
-MON-004 RapidScadaProvider atrás de monitor.Provider
-MON-005 Rapid -> Provider -> Service -> API com semântica E2E
+internal/monitor/rapid/
+  provider.go
+  binding.go
+  provider_test.go
+
+controllers/rc-simulator/reference-controller/rapid/
+  channels.json
+```
+
+Contrato em implementação:
+
+- `Reader.ReadCurrent`, `ReadAlarms`, `ReadEvents`, `Health`;
+- `Provider` implementa exatamente `monitor.Provider`;
+- inventário de geradores é configurado e validado contra o Controller Profile;
+- `rapid/channels.json` mapeia **canais Rapid**, nunca registradores Modbus;
+- transform explícito `number`, `boolean` ou `enum`;
+- boolean/enum desconhecido falha fechado;
+- Rapid status `<=0` omite a métrica, não produz zero;
+- amostras antigas podem ser marcadas `stale` conforme profile;
+- falha de leitura preserva last-known com `quality=offline` e communication `offline`;
+- health do Reader indisponível produz provider `unavailable`;
+- nenhum write/comando é implementado.
+
+`MON-004` permanece `IN_PROGRESS` até o código ser publicado e CI + CodeQL verdes no mesmo HEAD.
+
+## 13. Próxima fila
+
+```text
+MON-005 implementar adapter local Rapid baseado no cliente suportado e provar
+        Rapid -> Reader -> Provider -> Service -> /api/v1 com canais vinculados
 MON-006 hardening rc-monitor: config/non-root/systemd/logs/observabilidade
 MON-007 restart/recovery/soak próprios do rc-monitor
 ```
 
 Frontend somente após modelo/API/profiles/Rapid provider e `absent/stale/offline/quality` estabilizados.
 
-## 13. Gates externos pendentes
+## 14. Gates externos pendentes
 
 - `SEM-001`: canais Rapid vinculados e valores recuperados inequivocamente pelo backend;
 - HIL read-only por controladora/modelo/firmware/meio físico/VPN/modem;
@@ -254,7 +286,7 @@ implemented
 
 `PRODUCTION_VALIDATED=false`.
 
-## 14. Checklist canônico
+## 15. Checklist canônico
 
 <!-- CHECKLIST_START -->
 | ID | Status | Item / critério de saída |
@@ -274,9 +306,9 @@ implemented
 | SEM-001 | TODO | E2E semântico Rapid com canais vinculados. |
 | MON-001 | DONE | Foundation/model/Provider/Service/FakeProvider; CI #122 + CodeQL #49 PASS. |
 | MON-002 | DONE | API read-only `/api/v1`; CI #126 + CodeQL #53 PASS. |
-| MON-003 | IN_PROGRESS | Controller Profile schema/loader/profile sintético; gofmt corrigido, novo CI pendente. |
-| MON-004 | NEXT | Implementar `RapidScadaProvider` atrás de `monitor.Provider`. |
-| MON-005 | TODO | Testar monitor contra Rapid real/sintético e fechar semântica E2E. |
+| MON-003 | DONE | Controller Profiles schema/loader/profile sintético; CI #128 + CodeQL #55 PASS. |
+| MON-004 | IN_PROGRESS | `RapidScadaProvider`, Reader seam e binding de canais Rapid; CI/CodeQL pendentes. |
+| MON-005 | NEXT | Adapter Rapid suportado + integração semântica E2E contra Rapid real/sintético. |
 | MON-006 | TODO | Hardening monitor: non-root/systemd/config/logs/observabilidade. |
 | MON-007 | TODO | Soak/recovery próprios do rc-monitor. |
 | HIL-001 | BLOCKED | HIL read-only primeira controladora real. |
@@ -291,22 +323,22 @@ implemented
 | PROD-001 | BLOCKED | Exige VM + semântica + HIL + soak + aprovação operacional. |
 <!-- CHECKLIST_END -->
 
-## 15. Próximo passo exato
+## 16. Próximo passo exato
 
 ```text
-Concluir MON-003:
-1. publicar correção gofmt;
+Concluir MON-004:
+1. publicar RapidScadaProvider + binding + testes;
 2. CI + CodeQL verdes no mesmo HEAD;
-3. marcar MON-003 DONE;
-4. iniciar MON-004 RapidScadaProvider.
+3. marcar MON-004 DONE;
+4. MON-005 só toca o Rapid real após SOAK-001 fechar.
 ```
 
-## 16. Proibições atuais
+## 17. Proibições atuais
 
 - não copiar código/controller JSON do Genmon;
 - não modificar ProjetoGerador;
 - não colocar Modbus/register maps no Gateway;
-- não transformar rc-monitor em bridge;
+- não reimplementar o Rapid Server wire protocol no rc-monitor;
 - não inventar zero;
 - não tratar `REFERENCE_ONLY` como compatibilidade;
 - não habilitar writes industriais;
@@ -314,6 +346,6 @@ Concluir MON-003:
 - não declarar produção antes dos gates;
 - não mesclar PR #2/#3 em `main` sem ordem explícita.
 
-## 17. Freshness gate
+## 18. Freshness gate
 
 Mudanças em `cmd/`, `internal/`, `configs/`, `catalog/`, `controllers/`, `scripts/`, `systemd/`, `.github/workflows/`, `go.mod/go.sum` ou futuro backend/frontend exigem `PROJECT_STATE.md` atualizado depois da última mudança material.

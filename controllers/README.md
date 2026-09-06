@@ -1,6 +1,6 @@
 # Controller Profiles
 
-This directory contains **original RC Monitor controller-profile definitions**. Profiles describe the canonical generator capabilities that the backend and future frontend may expose. They do not change RC Gateway transport behavior and do not put Modbus register maps into the Gateway core.
+This directory contains **original RC Monitor controller-profile definitions**. Profiles describe canonical generator capabilities for RC Monitor and the future frontend. They do not change RC Gateway transport behavior and do not place Modbus register maps inside the Gateway core.
 
 ## Layout
 
@@ -10,9 +10,11 @@ controllers/<manufacturer>/<model>/
   telemetry.json
   alarms.json
   ui.json
+  rapid/
+    channels.json
 ```
 
-Rapid SCADA channel bindings and templates are added later under the profile only after model/firmware documentation and validation exist. A profile is not production evidence by itself.
+`rapid/channels.json` binds canonical metrics to Rapid SCADA **channel numbers**, not to physical Modbus registers. Physical register addresses/protocol details remain in the Rapid SCADA communication-line/driver template appropriate to the controller.
 
 ## Schema v1 rules
 
@@ -20,16 +22,18 @@ Rapid SCADA channel bindings and templates are added later under the profile onl
 - `telemetry.json` lists only canonical `monitor.MetricKey` values.
 - `alarms.json` declares normalized alarm codes/severity/messages.
 - `ui.json` groups only metrics declared by the telemetry profile.
+- `rapid/channels.json` maps declared metrics to Rapid SCADA channel numbers and explicit number/boolean/enum transforms.
 - unknown JSON fields fail closed;
 - duplicate/unknown metric keys fail validation;
-- component paths must be relative `.json` paths without traversal;
-- `synthetic` and `draft` profiles are not HIL/production validated;
-- missing telemetry is never converted to numeric zero.
+- required canonical metrics must have a Rapid channel binding before that binding is accepted;
+- discrete boolean/enum raw values must be explicitly mapped; unknown values fail closed;
+- synthetic/draft profiles are not HIL/production validation.
+- missing/undefined Rapid channel data is omitted, never converted to numeric zero.
 
-The Go validator/loader lives in `internal/monitor/profile`.
+Go validation/loading lives in `internal/monitor/profile` and the Rapid provider/binding logic in `internal/monitor/rapid`.
 
 ## Genmon reference policy
 
-`jgyates/genmon` is used only as a functional/domain reference. Its controller JSON files are GPLv2 material and are **not copied into this proprietary repository**. The factual manufacturer/model inventory can guide what profiles we should implement, but each RC profile must be authored from permitted manufacturer documentation, field captures/HIL, or other appropriately licensed sources.
+`jgyates/genmon` is used only as a functional/domain reference. Its controller JSON files are GPLv2 material and are **not copied into this proprietary repository**. The factual manufacturer/model inventory can guide which profiles should be independently authored from permitted manufacturer documentation and field/HIL evidence.
 
 See `REFERENCE_CATALOG.md` for the current reference inventory.
