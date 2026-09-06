@@ -3,7 +3,7 @@
 <!-- PROJECT_STATE_SCHEMA: 2 -->
 <!-- CANONICAL_HANDOFF: true -->
 <!-- CURRENT_CODE_BRANCH: feature/monitor-core -->
-<!-- CURRENT_DEVELOPMENT_TASK: HARD-001 -->
+<!-- CURRENT_DEVELOPMENT_TASK: UI-001 -->
 <!-- EXTERNAL_RUNNING_GATE: SOAK-001 -->
 <!-- PRODUCTION_VALIDATED: false -->
 <!-- PR2_MUST_REMAIN_DRAFT: true -->
@@ -76,31 +76,32 @@ MON-005 inclui Rapid Web API, semântica de métricas/alarmes/eventos, E2E, outa
 
 A validação systemd/VM do `rc-monitor` permanece externa e só pode começar depois de `SOAK-001` liberar o host.
 
-## HARD-001 — IN_PROGRESS
+## HARD-001 — DONE
 
-Candidato de least privilege montado em `tmp-backend-finish`:
+Hardening non-root do `scadacomm6` foi codificado no installer e validado no mesmo HEAD de código:
 
 ```text
-6c4c94077369dafc7175d57e570f677d70c4e1ae
-  installer: harden ScadaComm as non-root
-
-5702cb5bbc815715a3f68b7e5767903d907b2d2a
-  test: enforce ScadaComm non-root installer contract
+HEAD: 540ae8a60f331a57a86c5eb7429c14e27d08f4fd
+Gateway CI #148: SUCCESS
+CodeQL #75: SUCCESS
+Gateway and Rapid SCADA stack installer contract: SUCCESS
+Reproducible release build: SUCCESS
+Validate release archive and installer dry-run: SUCCESS
 ```
 
-O hardening codificado preserva o baseline já homologado manualmente na VM e evita ownership amplo:
+Implementação:
 
-- cria usuário/grupo de sistema dedicado `scadacomm` de forma idempotente;
-- grava drop-in de `scadacomm6.service` com `User=scadacomm`, `Group=scadacomm`, `NoNewPrivileges=true`, `PrivateTmp=true`, `ProtectHome=true`, capability sets vazios e `UMask=0027`;
-- mantém a árvore `/opt/scada` sob ownership do pacote/root; o installer não executa `chown -R /opt/scada`;
-- configura `ScadaInstanceConfig.xml` para usar `/var/log/scada` como raiz de logs;
-- concede escrita somente a `/var/log/scada/ScadaComm/Log`, mantendo os diretórios de aplicação/config/driver como leitura;
-- após restart, verifica `scadacomm6.service` ativo, usuário efetivo `scadacomm`, leitura do worker/config e escrita no diretório de log dedicado;
-- o teste de contrato exige as diretivas de hardening e falha se houver ownership recursivo da árvore Rapid.
+- usuário/grupo de sistema dedicado `scadacomm`, criado de forma idempotente;
+- drop-in de `scadacomm6.service` com `User=scadacomm`, `Group=scadacomm`, `NoNewPrivileges=true`, `PrivateTmp=true`, `ProtectHome=true`, capability sets vazios e `UMask=0027`;
+- árvore `/opt/scada` permanece sob ownership do pacote/root; o installer não executa `chown -R /opt/scada`;
+- `ScadaInstanceConfig.xml` usa `/var/log/scada` como raiz de logs;
+- somente `/var/log/scada/ScadaComm/Log` recebe escrita pelo usuário dedicado;
+- após restart, o installer verifica serviço ativo, usuário efetivo `scadacomm`, leitura do worker/config e escrita no diretório de log;
+- o teste de contrato exige as diretivas de hardening e rejeita ownership recursivo da árvore Rapid.
 
-Base técnica Rapid 6.4.7 usada na decisão: `CommDirs` exige `Lang`, `Log` e `Drv`; `Manager` carrega `ScadaInstanceConfig.xml` e aplica `LogDir`; a documentação Linux upstream define `/var/log/scada` como diretório de logs. Não foi identificada necessidade de tornar `/opt/scada` gravável pelo Communicator.
+Base técnica Rapid 6.4.7: `CommDirs` exige `Lang`, `Log` e `Drv`; `Manager` carrega `ScadaInstanceConfig.xml` e aplica `LogDir`; a documentação Linux upstream define `/var/log/scada` para logs. Não foi identificada necessidade de tornar `/opt/scada` gravável pelo Communicator.
 
-HARD-001 permanece `IN_PROGRESS` até este candidato ser promovido para `feature/monitor-core` e Gateway CI + CodeQL ficarem verdes no mesmo HEAD.
+A validação prática da nova automação no host real será repetida somente após `SOAK-001`; o comportamento non-root equivalente já foi comprovado manualmente em VM em `VM-006`/`VM-007`.
 
 ## API read-only
 
@@ -131,7 +132,7 @@ GET /api/v1/generators/{id}/events
 | VM-005 | DONE | Cold boot. |
 | VM-006 | DONE | ScadaComm non-root. |
 | VM-007 | DONE | Cold boot pós-non-root. |
-| HARD-001 | IN_PROGRESS | Installer ScadaComm non-root least-privilege; aguarda gates. |
+| HARD-001 | DONE | Installer ScadaComm non-root least-privilege; CI #148 + CodeQL #75. |
 | SOAK-001 | IN_PROGRESS | Soak 24 h da VM. |
 | SEM-001 | TODO | Binding semântico com canais Rapid reais. |
 | MON-001 | DONE | Foundation. |
@@ -156,12 +157,11 @@ GET /api/v1/generators/{id}/events
 ## Próximo passo exato
 
 ```text
-1. fast-forward feature/monitor-core para o HEAD deste candidato;
-2. exigir Gateway CI + CodeQL verdes no mesmo HEAD;
-3. confirmar teste de contrato do installer e release reprodutível;
-4. se verdes, marcar HARD-001 DONE;
-5. manter a VM intocada até SOAK-001 terminar;
-6. depois do soak, executar SEM-001 e validações systemd/VM pendentes.
+1. manter a VM intocada enquanto SOAK-001 estiver em execução;
+2. UI-001 é a próxima tarefa software-only: congelar contrato frontend sobre a API read-only existente;
+3. após SOAK-001, validar o installer/hardening no host real com preflight non-disruptive;
+4. executar SEM-001 com canais Rapid reais;
+5. HIL-001/HIL-002 continuam bloqueados até hardware/meio físico disponível e aprovado.
 ```
 
 `PRODUCTION_VALIDATED=false`.
