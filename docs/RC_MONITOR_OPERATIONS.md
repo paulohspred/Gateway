@@ -35,6 +35,8 @@ bin/rc-monitor --check-config --config /etc/rc-monitor.json
 
 A validação carrega perfis e channel bindings, rejeita campos desconhecidos e não abre listener nem conexão Rapid.
 
+Paths relativos de `profileDir`, `rapidBinding` e `draftCatalog` são resolvidos a partir do diretório do arquivo de configuração. Como o serviço instalado usa `/etc/rc-monitor.json`, prefira paths absolutos para recursos da release, por exemplo `/opt/rc-gateway/current/controllers/...`. O instalador valida uma cópia candidata já em `/etc` antes de substituir a configuração ativa, evitando aceitar um path que só funcionava no diretório de origem.
+
 Para `rapid-web`, um arquivo `/etc/rc-monitor.env` pode conter, por exemplo:
 
 ```text
@@ -58,12 +60,12 @@ O instalador:
 
 1. valida a configuração com o binário da própria release;
 2. cria `rc-monitor` como usuário de sistema sem shell;
-3. instala `/etc/rc-monitor.json` com leitura restrita;
+3. instala uma configuração candidata em `/etc` e a valida no local final antes do replace;
 4. instala `/etc/rc-monitor.env` como `0600 root:root`;
 5. instala e habilita o unit systemd;
 6. exige `/readyz` saudável após restart.
 
-Use `--dry-run` para validar pacote/config sem alterar o host.
+Use `--dry-run` para validar pacote/config sem alterar o host. O dry-run valida o arquivo no diretório de origem; a instalação real repete a validação a partir de `/etc`.
 
 ## Endpoints
 
@@ -94,7 +96,7 @@ GET /api/v1/generators/{id}/events
 
 Alarmes e eventos são produzidos somente quando existe binding explícito. O monitor não deduz alarmes de nomes de fabricante nem de registradores Modbus.
 
-O estado atual vem de canais Rapid. O histórico usa a Web API oficial do Rapid para eventos quando disponível. Se não houver evidência suficiente para determinar o instante de ativação, o sistema não fabrica timestamp de origem.
+O estado atual vem de canais Rapid. O histórico usa a Web API oficial do Rapid para eventos quando disponível. Para um alarme ativo, `raisedAt` usa o último instante de transição inativa -> ativa encontrado no histórico. Se o histórico estiver indisponível ou não contiver a transição, `raisedAt` é o instante em que o estado ativo foi observado pelo adapter; portanto não deve ser interpretado como prova do instante físico original nesse caso.
 
 ## Diagnóstico
 
