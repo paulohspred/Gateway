@@ -2,8 +2,8 @@
 
 <!-- PROJECT_STATE_SCHEMA: 2 -->
 <!-- CANONICAL_HANDOFF: true -->
-<!-- CURRENT_CODE_BRANCH: feature/monitor-core -->
-<!-- CURRENT_DEVELOPMENT_TASK: UI-001 -->
+<!-- CURRENT_CODE_BRANCH: feature/frontend-contract -->
+<!-- CURRENT_DEVELOPMENT_TASK: UI-002 -->
 <!-- EXTERNAL_RUNNING_GATE: SOAK-001 -->
 <!-- PRODUCTION_VALIDATED: false -->
 <!-- PR2_MUST_REMAIN_DRAFT: true -->
@@ -30,6 +30,7 @@ Regras: Gateway não contém register maps; RC Monitor recebe canais Rapid, nunc
 
 - `hardening/standalone-10x` -> PR #2 -> `main`: deve permanecer draft/not-merged.
 - `feature/monitor-core` -> PR #3 -> `hardening/standalone-10x`: deve permanecer draft.
+- `feature/frontend-contract` deriva de `feature/monitor-core` e contém a especificação/implementação do frontend; não mesclar em `main` diretamente.
 - não alterar `main` nem mesclar PR #2/#3 sem ordem explícita do proprietário;
 - `tmp-backend-finish` é somente branch de montagem/correção para fast-forward do PR #3;
 - não tocar na VM durante `SOAK-001`.
@@ -117,6 +118,51 @@ GET /api/v1/generators/{id}/alarms
 GET /api/v1/generators/{id}/events
 ```
 
+## Frontend em implementação
+
+Primeira implementação real iniciada em `feature/frontend-contract` sobre a API read-only existente.
+
+Escopo já codificado, aguardando gates próprios antes de ser considerado concluído:
+
+```text
+frontend/
+  React + TypeScript + Vite
+  TanStack Query
+  Zod
+  Lucide
+
+rotas:
+  /
+  /generators
+  /generators/:id
+  /alarms
+  /events
+  /communication
+```
+
+Características:
+
+- shell industrial dark responsivo;
+- Visão Geral e frota por telemetria real;
+- lista de geradores;
+- Detalhe do Gerador seguindo `docs/GENERATOR_DETAIL_CONTRACT.md`;
+- sinótico sem inferir MCB/GCB/ATS/rede ausentes;
+- Motor/ECU, elétrica, combustível, bateria/DC, alarmes, eventos e detalhes de quality;
+- zero real permanece zero; ausência permanece `N/D`; `bad` não é exibido como valor confiável;
+- sem START/STOP/RESET/TEST/TRANSFER/setpoints/acknowledge;
+- polling/cache centralizados via TanStack Query;
+- agregação de frota usa concorrência limitada no cliente enquanto não existe endpoint agregado;
+- `capabilities/profile` read-only continua gap conhecido para distinguir `unsupported` de ausência transitória.
+
+Gates adicionados para a branch frontend:
+
+```text
+.github/workflows/frontend-ci.yml
+.github/workflows/codeql-frontend.yml
+```
+
+A implementação ainda **não é considerada validada** até Frontend CI + CodeQL Frontend passarem no mesmo HEAD proposto.
+
 ## Checklist canônico
 
 <!-- CHECKLIST_START -->
@@ -145,10 +191,10 @@ GET /api/v1/generators/{id}/events
 | HIL-001 | BLOCKED | Primeira controladora real read-only. |
 | HIL-002 | BLOCKED | Modem/VPN/meio físico. |
 | CMD-001 | DEFERRED | Writes só após HIL/interlocks/auditoria. |
-| UI-001 | NEXT | Congelar contrato frontend após hardening operacional. |
-| UI-002 | TODO | Shell visual. |
-| UI-003 | TODO | Telas + API real. |
-| UI-004 | TODO | Testes frontend. |
+| UI-001 | DONE | Contratos de produto, superfícies, commissioning, ECU e Detalhe do Gerador congelados; implementação real autorizada. |
+| UI-002 | IN_PROGRESS | Shell visual real + primeira vertical codificados; falta Frontend CI/CodeQL Frontend verdes. |
+| UI-003 | NEXT | Consolidar telas/API real, capability/profile read-only e integração de produção. |
+| UI-004 | TODO | Testes frontend, regressão responsiva/visual e edge cases. |
 | REL-001 | TODO | Confirmar proteção de main. |
 | REL-002 | DONE | Release inclui rc-monitor e passou gate reprodutível/dry-run. |
 | PROD-001 | BLOCKED | Exige SEM + HIL + soak + aprovação. |
@@ -158,10 +204,12 @@ GET /api/v1/generators/{id}/events
 
 ```text
 1. manter a VM intocada enquanto SOAK-001 estiver em execução;
-2. UI-001 é a próxima tarefa software-only: congelar contrato frontend sobre a API read-only existente;
-3. após SOAK-001, validar o installer/hardening no host real com preflight non-disruptive;
-4. executar SEM-001 com canais Rapid reais;
-5. HIL-001/HIL-002 continuam bloqueados até hardware/meio físico disponível e aprovado.
+2. validar a primeira implementação frontend com Frontend CI + CodeQL Frontend no mesmo HEAD;
+3. corrigir typecheck/test/build até verde antes de marcar UI-002 DONE;
+4. UI-003 é NEXT: consolidar a integração real e resolver capability/profile read-only para HMI adaptativa;
+5. após SOAK-001, validar installer/hardening no host real com preflight non-disruptive;
+6. executar SEM-001 com canais Rapid reais;
+7. HIL-001/HIL-002 continuam bloqueados até hardware/meio físico disponível e aprovado.
 ```
 
 `PRODUCTION_VALIDATED=false`.
