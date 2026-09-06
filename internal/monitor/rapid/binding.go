@@ -284,7 +284,7 @@ func (c Condition) Matches(raw float64) (bool, error) {
 	case ConditionNonZero:
 		return raw != 0, nil
 	case ConditionBitSet:
-		if raw < 0 || raw > math.MaxUint32 || math.Trunc(raw) != raw {
+		if raw < 0 || raw > float64(^uint32(0)) || math.Trunc(raw) != raw {
 			return false, fmt.Errorf("bit_set requires an unsigned 32-bit integer raw value, got %v", raw)
 		}
 		return uint32(raw)&(uint32(1)<<*c.Bit) != 0, nil
