@@ -33,6 +33,14 @@ Este é o ponto de entrada para qualquer trabalho futuro de frontend. Nenhuma te
    - proveniência e quality;
    - proibição de métricas inventadas no navegador.
 
+5. [`GENERATOR_DETAIL_CONTRACT.md`](./GENERATOR_DETAIL_CONTRACT.md)
+   - congela a primeira HMI principal antes de React;
+   - define regiões, wireframe e hierarquia operacional;
+   - mapeia cada bloco aos endpoints e MetricKeys reais;
+   - define comportamento para `good`, `stale`, `offline`, `bad`, `unknown`, ausência e zero real;
+   - proíbe inferências elétricas e industriais não sustentadas;
+   - identifica o pequeno gap read-only de capability/profile necessário para uma UI adaptativa profissional.
+
 ## Ordem de execução
 
 ```text
@@ -44,11 +52,13 @@ commissioning
       ↓
 catálogo de telemetria/ECU
       ↓
-wireframe Detalhe do Gerador
+contrato Detalhe do Gerador
+      ↓
+mockup Detalhe do Gerador
       ↓
 aprovação visual
       ↓
-wireframe Visão Geral
+wireframe/mockup Visão Geral
       ↓
 aprovação visual
       ↓
