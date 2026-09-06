@@ -123,6 +123,12 @@ jobs:
           RC_GATEWAY_SOAK: '1'
           RC_GATEWAY_SOAK_SECONDS: '30'
         run: go test ./internal/bridge -run '^TestSoakImpairedReconnect$' -count=1 -timeout=2m
+      - name: RC Monitor Rapid outage and recovery
+        run: go test ./internal/monitor/rapid -run '^TestRapidWebSemanticPipeline(EndToEnd|MiniSoak)$' -count=1 -timeout=2m
+      - name: RC Monitor process restart lifecycle
+        env:
+          RC_MONITOR_RESTART_CYCLES: '20'
+        run: bash scripts/test-rc-monitor-process-recovery.sh
 
   release:
     name: Security, reproducibility and release
