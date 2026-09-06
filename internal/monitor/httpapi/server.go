@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/paulohspred/Gateway/internal/monitor"
@@ -15,23 +16,26 @@ import (
 const APIVersion = "v1"
 
 type Server struct {
-	service *monitor.Service
-	handler http.Handler
+	service      *monitor.Service
+	handler      http.Handler
+	startedAt    time.Time
+	requestCount atomic.Uint64
 }
 
 func New(service *monitor.Service) (*Server, error) {
 	if service == nil {
 		return nil, errors.New("monitor service is required")
 	}
-	s := &Server{service: service}
+	s := &Server{service: service, startedAt: time.Now().UTC()}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", s.handleHealth)
 	mux.HandleFunc("/readyz", s.handleReady)
+	mux.HandleFunc("/metrics", s.handleMetrics)
 	mux.HandleFunc("/api/v1/system/health", s.handleSystemHealth)
 	mux.HandleFunc("/api/v1/generators", s.handleGenerators)
 	mux.HandleFunc("/api/v1/generators/", s.handleGeneratorResource)
 	mux.HandleFunc("/", s.handleNotFound)
-	s.handler = securityHeaders(getOnly(mux))
+	s.handler = securityHeaders(s.countRequests(getOnly(mux)))
 	return s, nil
 }
 
@@ -102,6 +106,23 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 		APIVersion:     APIVersion,
 		ProviderStatus: health.Status,
 	})
+}
+
+func (s *Server) handleMetrics(w http.ResponseWriter, _ *http.Request) {
+	uptime := time.Since(s.startedAt).Seconds()
+	if uptime < 0 {
+		uptime = 0
+	}
+	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = fmt.Fprintf(w,
+		"# HELP rc_monitor_uptime_seconds Process uptime in seconds.\n"+
+			"# TYPE rc_monitor_uptime_seconds gauge\n"+
+			"rc_monitor_uptime_seconds %.3f\n"+
+			"# HELP rc_monitor_http_requests_total HTTP requests handled by RC Monitor.\n"+
+			"# TYPE rc_monitor_http_requests_total counter\n"+
+			"rc_monitor_http_requests_total %d\n",
+		uptime, s.requestCount.Load())
 }
 
 func (s *Server) handleSystemHealth(w http.ResponseWriter, r *http.Request) {
@@ -235,6 +256,13 @@ func scalarValue(value monitor.MetricValue) (any, error) {
 	default:
 		return nil, fmt.Errorf("unsupported metric value kind %q", kind)
 	}
+}
+
+func (s *Server) countRequests(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.requestCount.Add(1)
+		next.ServeHTTP(w, r)
+	})
 }
 
 func getOnly(next http.Handler) http.Handler {
