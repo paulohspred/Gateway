@@ -24,14 +24,20 @@ grep -Fq 'cp -R "$FRONTEND_DIR/dist/." "$stage/frontend/"' "$BUILD"
 grep -Fq '[[ -x "$pkg/bin/rc-monitor" ]]' "$RELEASE"
 grep -Fq '[[ -f "$pkg/frontend/index.html" ]]' "$RELEASE"
 grep -Fq "! -path '*/bin/rc-monitor'" "$RELEASE"
-echo "application release payload contract: OK"
+grep -Fq '/usr/local/go/bin/go' "$BUILD"
+grep -Fq 'CYCLONEDX_GOMOD_VERSION="07257d5b9cbd2a3d4338a880c0ca50081e1ac445"' "$BUILD"
+grep -Fq 'GOBIN="$BUILD_TOOL_DIR" "$GO_BIN" install' "$BUILD"
+grep -Fq 'export PATH="$(dirname "$GO_BIN"):$PATH"' "$BUILD"
+echo "application release payload/tooling contract: OK"
 
 # RC Monitor install must not relocate relative Rapid/profile paths silently and
 # must restore the previous known-good state on health-gate failure.
 grep -Fq 'deve ser absoluto para instalação em /etc' "$MONITOR"
 grep -Fq 'nova configuração do RC Monitor não ficou ready; restaurando estado anterior' "$MONITOR"
 grep -Fq 'cp --preserve=mode,ownership,timestamps "$backup_dir/config" "$CONFIG_TARGET"' "$MONITOR"
-echo "RC Monitor relocation and rollback contract: OK"
+grep -Fq -- '-h|--help)' "$MONITOR"
+grep -Fq 'usage 0' "$MONITOR"
+echo "RC Monitor relocation, rollback and CLI help contract: OK"
 
 # Rapid Web API: authentication read-only only. Command API must stay disabled.
 grep -Fq 'AllowAuthApi' "$RAPID_API"
