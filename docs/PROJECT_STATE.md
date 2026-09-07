@@ -94,6 +94,7 @@ Correções descobertas por instalação limpa e agora codificadas:
 - `install-rc-lab-stack.sh` orquestra stack-base -> Rapid Auth API -> Monitor -> frontend -> acceptance;
 - LAB exige sidecar SHA-256 do pacote Rapid e registra o hash efetivamente instalado;
 - release validator deixou de usar pipelines `tar | grep -q` sujeitos a SIGPIPE/141;
+- Gateway CI teve comandos `run:` com quoting YAML inválido corrigidos para blocos; `actionlint` pinado passou no workflow corrigido;
 - binding demo é explicitamente `SIMULATION_TEST_ONLY`; alarme é `SIMULATED_DIGITAL_ALARM`; o stock demo não arquiva eventos, portanto o binding LAB não inventa evento.
 
 Evidência na segunda VM `tes`:
@@ -125,6 +126,7 @@ undefined channel -> metric absent, not zero: PASS
 SIMULATED_DIGITAL_ALARM raise: PASS
 SIMULATED_DIGITAL_ALARM clear: PASS
 /events on stock Rapid demo: [] by design; no fake history inserted
+Gateway CI workflow actionlint after YAML fix: PASS
 ```
 
 Final LAB state records:
