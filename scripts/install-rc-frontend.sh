@@ -37,8 +37,17 @@ fi
 for cmd in nginx systemctl curl find; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "ERRO: comando obrigatório ausente: $cmd" >&2; exit 69; }
 done
-curl -fsS --max-time 3 "http://$MONITOR/healthz" >/dev/null || { echo "ERRO: RC Monitor não responde em http://$MONITOR/healthz" >&2; exit 5; }
-curl -fsS --max-time 3 "http://$ADMIN/healthz" >/dev/null || { echo "ERRO: RC Admin não responde em http://$ADMIN/healthz" >&2; exit 5; }
+wait_upstream(){
+  local name="$1" url="$2"
+  for _ in $(seq 1 30); do
+    if curl -fsS --max-time 3 "$url" >/dev/null 2>&1; then return 0; fi
+    sleep 1
+  done
+  echo "ERRO: $name não responde em $url após janela de readiness" >&2
+  return 1
+}
+wait_upstream "RC Monitor" "http://$MONITOR/healthz"
+wait_upstream "RC Admin" "http://$ADMIN/healthz"
 
 install -d -o root -g root -m 0750 "$STATE_DIR/nginx-backups"
 install -d -o root -g root -m 0755 "$(dirname "$NGINX_SITE")" "$(dirname "$NGINX_LINK")"

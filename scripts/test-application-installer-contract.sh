@@ -82,6 +82,8 @@ fi
 grep -Fq 'public, immutable' "$FRONTEND"
 grep -Fq 'Content-Security-Policy' "$FRONTEND"
 grep -Fq 'systemctl restart nginx.service' "$FRONTEND"
+grep -Fq 'wait_upstream "RC Monitor"' "$FRONTEND"
+grep -Fq 'wait_upstream "RC Admin"' "$FRONTEND"
 grep -Fq 'restaurando site anterior' "$FRONTEND"
 echo "frontend Nginx authenticated-BFF/isolation/cache/rollback contract: OK"
 
