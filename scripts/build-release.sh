@@ -11,10 +11,58 @@ BUILD_DATE="${BUILD_DATE:-$(date -u -d "@$SOURCE_DATE_EPOCH" +%Y-%m-%dT%H:%M:%SZ
 ARCHES="${ARCHES:-amd64 arm64}"
 DIST_DIR="${DIST_DIR:-$ROOT_DIR/dist}"
 REQUIRE_SBOM="${REQUIRE_SBOM:-0}"
-HOST_GOOS="$(go env GOOS)"
-HOST_GOARCH="$(go env GOARCH)"
 NODE_VERSION_FILE="$ROOT_DIR/.node-version"
 FRONTEND_DIR="$ROOT_DIR/frontend"
+CYCLONEDX_GOMOD_VERSION="07257d5b9cbd2a3d4338a880c0ca50081e1ac445"
+BUILD_TOOL_DIR=""
+
+cleanup_tools(){
+  [[ -z "$BUILD_TOOL_DIR" ]] || rm -rf "$BUILD_TOOL_DIR"
+}
+trap cleanup_tools EXIT
+
+resolve_go(){
+  GO_BIN="${GO_BIN:-}"
+  if [[ -z "$GO_BIN" ]]; then
+    GO_BIN="$(command -v go 2>/dev/null || true)"
+  fi
+  if [[ -z "$GO_BIN" && -x /usr/local/go/bin/go ]]; then
+    GO_BIN=/usr/local/go/bin/go
+  fi
+  [[ -n "$GO_BIN" && -x "$GO_BIN" ]] || {
+    echo "ERRO: Go ausente; configure GO_BIN ou instale Go. Também foi verificado /usr/local/go/bin/go." >&2
+    exit 69
+  }
+  export PATH="$(dirname "$GO_BIN"):$PATH"
+}
+
+resolve_cyclonedx(){
+  CYCLONEDX_GOMOD_BIN="${CYCLONEDX_GOMOD_BIN:-}"
+  if [[ -z "$CYCLONEDX_GOMOD_BIN" ]]; then
+    CYCLONEDX_GOMOD_BIN="$(command -v cyclonedx-gomod 2>/dev/null || true)"
+  fi
+  if [[ -n "$CYCLONEDX_GOMOD_BIN" && -x "$CYCLONEDX_GOMOD_BIN" ]]; then
+    return 0
+  fi
+  CYCLONEDX_GOMOD_BIN=""
+  if [[ "$REQUIRE_SBOM" != "1" ]]; then
+    return 0
+  fi
+
+  BUILD_TOOL_DIR="$(mktemp -d)"
+  echo "cyclonedx-gomod ausente; instalando versão pinada $CYCLONEDX_GOMOD_VERSION em diretório temporário..." >&2
+  if ! GOBIN="$BUILD_TOOL_DIR" "$GO_BIN" install "github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@$CYCLONEDX_GOMOD_VERSION"; then
+    echo "ERRO: não foi possível instalar cyclonedx-gomod pinado para gerar SBOM." >&2
+    exit 69
+  fi
+  CYCLONEDX_GOMOD_BIN="$BUILD_TOOL_DIR/cyclonedx-gomod"
+  [[ -x "$CYCLONEDX_GOMOD_BIN" ]] || { echo "ERRO: bootstrap de cyclonedx-gomod não produziu executável." >&2; exit 69; }
+}
+
+resolve_go
+HOST_GOOS="$("$GO_BIN" env GOOS)"
+HOST_GOARCH="$("$GO_BIN" env GOARCH)"
+resolve_cyclonedx
 
 for required in LICENSE NOTICE THIRD_PARTY_NOTICES.md; do
   [[ -f "$required" ]] || { echo "ERRO: arquivo legal obrigatório ausente: $required" >&2; exit 4; }
@@ -46,8 +94,8 @@ for arch in $ARCHES; do
 
   gateway_ldflags="-s -w -X main.version=$VERSION -X main.commit=$COMMIT -X main.buildDate=$BUILD_DATE"
   monitor_ldflags="-s -w -X main.version=$VERSION"
-  CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath -buildvcs=false -ldflags "$gateway_ldflags" -o "$stage/bin/rc-gateway" ./cmd/rc-gateway
-  CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath -buildvcs=false -ldflags "$monitor_ldflags" -o "$stage/bin/rc-monitor" ./cmd/rc-monitor
+  CGO_ENABLED=0 GOOS=linux GOARCH="$arch" "$GO_BIN" build -trimpath -buildvcs=false -ldflags "$gateway_ldflags" -o "$stage/bin/rc-gateway" ./cmd/rc-gateway
+  CGO_ENABLED=0 GOOS=linux GOARCH="$arch" "$GO_BIN" build -trimpath -buildvcs=false -ldflags "$monitor_ldflags" -o "$stage/bin/rc-monitor" ./cmd/rc-monitor
 
   cp systemd/rc-gateway.service systemd/rc-monitor.service "$stage/systemd/"
   cp configs/*.json "$stage/configs/"
@@ -68,6 +116,7 @@ for arch in $ARCHES; do
     "$stage/bin/rc-monitor" --check-config --config "$stage/configs/monitor/rc-monitor.fake.json"
     "$stage/bin/rc-monitor" --check-config --config "$stage/configs/monitor/rc-monitor.synthetic.json"
     "$stage/scripts/install-rc-monitor.sh" --dry-run "$stage/configs/monitor/rc-monitor.fake.json"
+    "$stage/scripts/install-rc-monitor.sh" --help >/dev/null
   fi
 
   printf '%s\n' "$VERSION" > "$stage/VERSION"
@@ -80,12 +129,13 @@ for arch in $ARCHES; do
     printf 'commit=%s\n' "$COMMIT"
     printf 'buildDate=%s\n' "$BUILD_DATE"
     printf 'node=%s\n' "$required_node"
+    printf 'go=%s\n' "$("$GO_BIN" version)"
     printf 'goos=linux\n'
     printf 'goarch=%s\n' "$arch"
   } > "$stage/MANIFEST"
 
-  if command -v cyclonedx-gomod >/dev/null 2>&1; then
-    GOOS=linux GOARCH="$arch" CGO_ENABLED=0 cyclonedx-gomod app -json -noserial -notimestamp -output "$stage/sbom.cdx.json" -main cmd/rc-gateway "$ROOT_DIR"
+  if [[ -n "$CYCLONEDX_GOMOD_BIN" && -x "$CYCLONEDX_GOMOD_BIN" ]]; then
+    GOOS=linux GOARCH="$arch" CGO_ENABLED=0 "$CYCLONEDX_GOMOD_BIN" app -json -noserial -notimestamp -output "$stage/sbom.cdx.json" -main cmd/rc-gateway "$ROOT_DIR"
   elif [[ "$REQUIRE_SBOM" == "1" ]]; then
     echo "ERRO: cyclonedx-gomod é obrigatório para esta build." >&2
     exit 3
