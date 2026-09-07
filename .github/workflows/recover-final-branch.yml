@@ -28,5 +28,9 @@ jobs:
           git fetch /tmp/final.bundle feature/frontend-contract:refs/remotes/bundle/final
           test "$(git rev-parse refs/remotes/bundle/final)" = "$TARGET_SHA"
           git fetch origin feature/frontend-contract
-          git merge-base --is-ancestor FETCH_HEAD refs/remotes/bundle/final
-          git push origin refs/remotes/bundle/final:refs/heads/feature/frontend-contract
+          remote_head="$(git rev-parse FETCH_HEAD)"
+          for f in .github/workflows/ci.yml .github/workflows/codeql.yml .github/workflows/frontend-ci.yml; do
+            test "$(git rev-parse FETCH_HEAD:$f)" = "$(git rev-parse refs/remotes/bundle/final:$f)"
+          done
+          git push origin refs/remotes/bundle/final:refs/heads/feature/frontend-contract \
+            --force-with-lease="refs/heads/feature/frontend-contract:${remote_head}"
