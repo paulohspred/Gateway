@@ -9,7 +9,7 @@ describe("metricView", () => {
     const telemetry: Telemetry = { ...base, metrics: { "generator.power_kw": { value: 0, unit: "kW", quality: "good", observedAt: "2026-09-06T12:00:00Z" } } };
     expect(metricView(telemetry, "generator.power_kw").display).toBe("0");
   });
-  it("não converte ausência em zero", () => { expect(metricView(base, "fuel.level")).toEqual({ present: false, display: "N/D", quality: "missing" }); });
+  it("não converte ausência em zero", () => { expect(metricView(base, "fuel.level")).toEqual({ present: false, display: "N/D", quality: "absent" }); });
   it("não usa número bad como decisão visual", () => {
     const telemetry: Telemetry = { ...base, metrics: { "engine.rpm": { value: 1800, unit: "rpm", quality: "bad", observedAt: "2026-09-06T12:00:00Z" } } };
     expect(metricView(telemetry, "engine.rpm").display).toBe("Dado inválido");
@@ -25,5 +25,5 @@ describe("metricView", () => {
 
 it("profile-unsupported metric is distinct from supported-but-absent", () => {
   expect(metricView(undefined, "fuel.level", { supported: false })).toMatchObject({ display: "Não suportado", quality: "unsupported", present: false });
-  expect(metricView(undefined, "fuel.level", { supported: true })).toMatchObject({ display: "N/D", quality: "missing", present: false });
+  expect(metricView(undefined, "fuel.level", { supported: true })).toMatchObject({ display: "N/D", quality: "absent", present: false });
 });

@@ -3,7 +3,7 @@ import type { Metric, Telemetry } from "../api/schemas";
 export type MetricView = {
   present: boolean;
   display: string;
-  quality: Metric["quality"] | "missing" | "unsupported";
+  quality: Metric["quality"] | "absent" | "unsupported";
   observedAt?: string;
   raw?: Metric["value"];
   unit?: string;
@@ -22,7 +22,7 @@ export function formatScalar(value: Metric["value"], digits = 1): string {
 export function metricView(telemetry: Telemetry | null | undefined, key: string, options: { digits?: number; booleanLabels?: readonly [string, string]; supported?: boolean } = {}): MetricView {
   if (options.supported === false) return { present: false, display: "Não suportado", quality: "unsupported" };
   const metric = metricOf(telemetry, key);
-  if (!metric) return { present: false, display: "N/D", quality: "missing" };
+  if (!metric) return { present: false, display: "N/D", quality: "absent" };
   if (metric.quality === "bad") return { present: true, display: "Dado inválido", quality: metric.quality, observedAt: metric.observedAt, raw: metric.value, ...(metric.unit ? { unit: metric.unit } : {}) };
   if (metric.quality === "unknown") return { present: true, display: "N/D", quality: metric.quality, observedAt: metric.observedAt, raw: metric.value, ...(metric.unit ? { unit: metric.unit } : {}) };
   let display: string;
@@ -31,6 +31,6 @@ export function metricView(telemetry: Telemetry | null | undefined, key: string,
   return { present: true, display, quality: metric.quality, observedAt: metric.observedAt, raw: metric.value, ...(metric.unit ? { unit: metric.unit } : {}) };
 }
 
-export function usableQuality(quality: Metric["quality"] | "missing" | "unsupported") {
+export function usableQuality(quality: Metric["quality"] | "absent" | "unsupported") {
   return quality === "good" || quality === "stale" || quality === "offline";
 }

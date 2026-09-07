@@ -15,7 +15,7 @@ curl -fsS --max-time 3 "$ADMIN_URL/readyz" >/dev/null || fail "RC Admin is not r
 curl -fsS --max-time 3 "$RAPID_WEB_URL/" >/dev/null || fail "Rapid Webstation loopback endpoint is unavailable"
 pass "Rapid Webstation, RC Monitor and RC Admin are reachable on loopback"
 
-for route in / /generators /alarms /events /communication /login /account/security /engineering/commissioning /admin/users; do
+for route in / /generators /alarms /events /history /communication /login /account/security /settings /about /engineering/commissioning /engineering/commissioning/new /engineering/profiles /engineering/bindings /engineering/diagnostics /admin/users /admin/roles /admin/sites /admin/audit /admin/system; do
   headers="$(mktemp)"; body="$(mktemp)"
   code="$(curl -sS --max-time 5 -D "$headers" -o "$body" -w '%{http_code}' "$BASE_URL$route")"
   [[ "$code" == "200" ]] || fail "$route returned HTTP $code"

@@ -28,7 +28,8 @@ require_entry(){
   grep -Eq "$pattern" "$listing" || { echo "ERRO: release ausente: $label" >&2; exit 4; }
 }
 
-require_entry '/sbom\.cdx\.json$' 'SBOM'
+require_entry '/sbom\.cdx\.json$' 'Go SBOM'
+require_entry '/frontend-sbom\.cdx\.json$' 'frontend SBOM'
 require_entry '/bin/rc-gateway$' 'rc-gateway'
 require_entry '/bin/rc-monitor$' 'rc-monitor'
 require_entry '/bin/rc-admin$' 'rc-admin'
@@ -41,7 +42,7 @@ for script in \
   install-release.sh install-scada-stack.sh install-rc-monitor.sh install-rc-admin.sh install-rc-frontend.sh \
   install-rc-lab-stack.sh configure-rapid-web-api.sh rc-frontend-acceptance.sh rc-admin-acceptance.sh rollback-release.sh \
   probe-usb-hid.sh collect-diagnostics.sh vm-acceptance.sh rapid-scada-acceptance.sh \
-  rapid-scada-production-acceptance.sh
+  rapid-scada-production-acceptance.sh apply-rapid-plan.sh
 do
   require_entry "/scripts/${script//./\\.}$" "scripts/$script"
 done

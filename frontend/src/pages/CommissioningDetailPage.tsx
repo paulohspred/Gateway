@@ -63,7 +63,7 @@ export function CommissioningDetailPage() {
     try {
       const result = await controlApi.preflightCommissioning(auth.csrf, id);
       setPreflight(result);
-      setMessage(result.pass ? "Preflight estrutural PASS." : "Preflight encontrou pendências.");
+      setMessage(result.pass ? "Preflight automatizado PASS." : "Preflight encontrou pendências.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Falha no preflight");
     }
@@ -80,6 +80,20 @@ export function CommissioningDetailPage() {
     }
   };
 
+  const exportEvidence = async () => {
+    try {
+      const snapshot = await controlApi.commissioningEvidence(id);
+      const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `commissioning-${commissioning.tag}-rev${commissioning.revision}-evidence.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+      setMessage("Pacote factual de evidências exportado.");
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Falha ao exportar evidências"); }
+  };
+
   const createChange = async () => {
     if (!changeReason.trim()) { setMessage("Informe o motivo da alteração."); return; }
     try {
@@ -93,6 +107,7 @@ export function CommissioningDetailPage() {
   return <>
     <Topbar title={`${commissioning.tag} · ${commissioning.name}`} subtitle={`${commissioning.lifecycle} · revisão ${commissioning.revision} · ${commissioning.stage}`} onRefresh={() => void query.refetch()} refreshing={query.isFetching}>
       <Link className="text-button" to="/engineering/commissioning">← Fila</Link>
+      <button className="text-button" onClick={() => void exportEvidence()}>Exportar evidências</button>
       {auth.hasPermission("commissioning.write") && mutable ? <Link className="primary-button compact" to={`/engineering/commissioning/${commissioning.id}/edit`}>Editar dados</Link> : null}
     </Topbar>
     <div className="content-grid commissioning-detail">
@@ -124,7 +139,7 @@ export function CommissioningDetailPage() {
         return <article key={stage} className={`gate-card gate-${gate?.status?.toLowerCase() ?? "pending"}`}>
           <header><div><code>{stage}</code><p>{descriptions[stage]}</p></div><StatusBadge tone={tone(gate?.status ?? "PENDING")}>{gate?.status ?? "PENDING"}</StatusBadge></header>
           {gate?.evidence ? <blockquote>{gate.evidence}</blockquote> : null}
-          {auth.hasPermission("commissioning.write") && mutable ? <><textarea value={evidence[stage] ?? ""} onChange={(event) => setEvidence((current) => ({ ...current, [stage]: event.target.value }))} placeholder="Evidência objetiva, referência de teste/hash/log…"/><div className="gate-actions"><button onClick={() => gateMutation.mutate({ stage, status: "PASS" })}>PASS</button><button onClick={() => gateMutation.mutate({ stage, status: "FAIL" })}>FAIL</button><button onClick={() => gateMutation.mutate({ stage, status: "BLOCKED" })}>BLOCKED</button></div></> : null}
+          {stage === "TELEMETRY_VALIDATION" ? <p className="panel-note">Gate automático: somente a validação de telemetria required pode atualizar este resultado.</p> : auth.hasPermission("commissioning.write") && mutable ? <><textarea value={evidence[stage] ?? ""} onChange={(event) => setEvidence((current) => ({ ...current, [stage]: event.target.value }))} placeholder="Evidência objetiva obrigatória para PASS; referência de teste/hash/log…"/><div className="gate-actions"><button disabled={!evidence[stage]?.trim()} onClick={() => gateMutation.mutate({ stage, status: "PASS" })}>PASS</button><button onClick={() => gateMutation.mutate({ stage, status: "FAIL" })}>FAIL</button><button onClick={() => gateMutation.mutate({ stage, status: "BLOCKED" })}>BLOCKED</button></div></> : null}
         </article>;
       })}</div></Panel>
 

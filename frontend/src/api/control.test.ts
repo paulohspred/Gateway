@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { authSessionSchema, commissioningSchema, profileStateSchema, roleSchema, settingsSchema } from "./control";
+import { authSessionSchema, commissioningSchema, profileStateSchema, roleSchema, settingsSchema, siteSchema } from "./control";
 
 describe("control plane schemas", () => {
   it("accepts the six canonical roles and rejects unknown roles", () => {
@@ -18,5 +18,10 @@ describe("control plane schemas", () => {
     expect(settingsSchema.parse({defaultLanguage:"pt-BR",defaultTimeZone:"UTC",defaultFleetView:"vertical"}).defaultFleetView).toBe("vertical");
     expect(profileStateSchema.parse({profileId:"p",status:"LAB",updatedAt:"2026-09-07T12:00:00Z",updatedBy:"u"}).status).toBe("LAB");
     expect(() => profileStateSchema.parse({profileId:"p",status:"PROD",updatedAt:"2026-09-07T12:00:00Z",updatedBy:"u"})).toThrow();
+  });
+  it("parses optional site metadata without inventing missing values", () => {
+    const site = siteSchema.parse({ id:"site-sp", code:"SP", name:"Planta SP", client:"Cliente A", address:"Av. Teste", latitude:-23.55, longitude:-46.63, technicalContact:"Plantão", timeZone:"America/Sao_Paulo", active:true, createdAt:"2026-09-07T12:00:00Z", updatedAt:"2026-09-07T12:00:00Z" });
+    expect(site.client).toBe("Cliente A");
+    expect(site.latitude).toBe(-23.55);
   });
 });

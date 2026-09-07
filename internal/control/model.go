@@ -124,13 +124,18 @@ func (u User) Public() PublicUser {
 }
 
 type Site struct {
-	ID        string    `json:"id"`
-	Code      string    `json:"code"`
-	Name      string    `json:"name"`
-	TimeZone  string    `json:"timeZone"`
-	Active    bool      `json:"active"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	ID               string    `json:"id"`
+	Code             string    `json:"code"`
+	Name             string    `json:"name"`
+	Client           string    `json:"client,omitempty"`
+	Address          string    `json:"address,omitempty"`
+	Latitude         *float64  `json:"latitude,omitempty"`
+	Longitude        *float64  `json:"longitude,omitempty"`
+	TechnicalContact string    `json:"technicalContact,omitempty"`
+	TimeZone         string    `json:"timeZone"`
+	Active           bool      `json:"active"`
+	CreatedAt        time.Time `json:"createdAt"`
+	UpdatedAt        time.Time `json:"updatedAt"`
 }
 
 type GateStatus string

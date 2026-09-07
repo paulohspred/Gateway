@@ -21,7 +21,7 @@ export const publicUserSchema = z.object({
   preferences: preferencesSchema.optional()
 });
 export const authSessionSchema = z.object({ user: publicUserSchema, csrfToken: z.string(), expiresAt: z.string(), mfaEnrollmentRequired: z.boolean().optional().default(false) });
-export const siteSchema = z.object({ id: z.string(), code: z.string(), name: z.string(), timeZone: z.string(), active: z.boolean(), createdAt: z.string(), updatedAt: z.string() });
+export const siteSchema = z.object({ id: z.string(), code: z.string(), name: z.string(), client: z.string().optional(), address: z.string().optional(), latitude: z.number().optional(), longitude: z.number().optional(), technicalContact: z.string().optional(), timeZone: z.string(), active: z.boolean(), createdAt: z.string(), updatedAt: z.string() });
 export const gateSchema = z.object({ status: z.enum(["PENDING", "PASS", "FAIL", "BLOCKED"]), evidence: z.string().optional(), updatedAt: z.string(), updatedBy: z.string().optional() });
 export const commissioningSchema = z.object({
   id: z.string(), tag: z.string(), name: z.string(), siteId: z.string(), lifecycle: z.string(), stage: z.string(),
@@ -47,6 +47,9 @@ export const auditSchema = z.object({
   id: z.string(), at: z.string(), actorUserId: z.string().optional(), actorUsername: z.string().optional(), action: z.string(),
   objectType: z.string(), objectId: z.string().optional(), result: z.string(), details: z.record(z.string(), z.string()).optional(),
   correlationId: z.string().optional(), source: z.string().optional()
+});
+export const commissioningEvidenceSchema = z.object({
+  schema: z.literal(1), commissioning: commissioningSchema, profileState: profileStateSchema.optional(), audit: z.array(auditSchema), generatedAt: z.string()
 });
 export const systemInfoSchema = z.object({
   service: z.string(), version: z.string(), apiVersion: z.string(), cookieSecure: z.boolean(), sessionTtlSeconds: z.number(),
@@ -74,6 +77,7 @@ async function request(path: string, init: RequestInit = {}, csrf?: string): Pro
   if (csrf) headers.set("X-CSRF-Token", csrf);
   const response = await fetch(path, { ...init, headers, credentials: "same-origin", cache: "no-store" });
   if (!response.ok) {
+    if (response.status === 401 && typeof window !== "undefined") window.dispatchEvent(new Event("rc-auth-expired"));
     let code: string | undefined;
     let message = `HTTP ${response.status}`;
     try {
@@ -123,6 +127,7 @@ export const controlApi = {
   bindings: async () => z.array(bindingSchema).parse(await request("/api/v1/engineering/bindings")),
   commissionings: async () => z.array(commissioningSchema).parse(await request("/api/v1/engineering/commissionings")),
   commissioning: async (id: string) => commissioningSchema.parse(await request(`/api/v1/engineering/commissionings/${encodeURIComponent(id)}`)),
+  commissioningEvidence: async (id: string) => commissioningEvidenceSchema.parse(await request(`/api/v1/engineering/commissionings/${encodeURIComponent(id)}/evidence`)),
   createCommissioning: async (csrf: string, input: unknown) => commissioningSchema.parse(await request("/api/v1/engineering/commissionings", { method: "POST", body: json(input) }, csrf)),
   updateCommissioning: async (csrf: string, id: string, input: unknown) => commissioningSchema.parse(await request(`/api/v1/engineering/commissionings/${encodeURIComponent(id)}`, { method: "PATCH", body: json(input) }, csrf)),
   preflightCommissioning: async (csrf: string, id: string) => preflightSchema.parse(await request(`/api/v1/engineering/commissionings/${encodeURIComponent(id)}/preflight`, { method: "POST" }, csrf)),

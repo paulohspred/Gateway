@@ -324,6 +324,7 @@ func (s *Store) UpdateUser(actor User, id string, in UpdateUserInput) (PublicUse
 		if u.ID != id {
 			continue
 		}
+		before := u.Public()
 		proposedRole := u.Role
 		proposedActive := u.Active
 		if in.Role != nil {
@@ -379,7 +380,7 @@ func (s *Store) UpdateUser(actor User, id string, in UpdateUserInput) (PublicUse
 			u.MFARequired = true
 		}
 		u.UpdatedAt = time.Now().UTC()
-		s.auditLocked(actor, "admin.user.update", "user", u.ID, "success", map[string]string{"role": string(u.Role), "active": strconv.FormatBool(u.Active)})
+		s.auditLocked(actor, "admin.user.update", "user", u.ID, "success", map[string]string{"before": auditJSON(before), "after": auditJSON(u.Public()), "role": string(u.Role), "active": strconv.FormatBool(u.Active)})
 		if err := s.saveLocked(); err != nil {
 			return PublicUser{}, err
 		}
@@ -455,6 +456,13 @@ func (s *Store) RevokeSessions(actor User, id string) error {
 	return errors.New("user not found")
 }
 
+func (s *Store) RecordLogout(actor User) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.auditLocked(actor, "auth.logout", "user", actor.ID, "success", nil)
+	_ = s.saveLocked()
+}
+
 func (s *Store) RevokeOwnSessions(actor User) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -498,11 +506,16 @@ func (s *Store) ListSites() []Site {
 }
 
 type SiteInput struct {
-	ID       string `json:"id,omitempty"`
-	Code     string `json:"code"`
-	Name     string `json:"name"`
-	TimeZone string `json:"timeZone"`
-	Active   *bool  `json:"active"`
+	ID               string   `json:"id,omitempty"`
+	Code             string   `json:"code"`
+	Name             string   `json:"name"`
+	Client           string   `json:"client,omitempty"`
+	Address          string   `json:"address,omitempty"`
+	Latitude         *float64 `json:"latitude,omitempty"`
+	Longitude        *float64 `json:"longitude,omitempty"`
+	TechnicalContact string   `json:"technicalContact,omitempty"`
+	TimeZone         string   `json:"timeZone"`
+	Active           *bool    `json:"active"`
 }
 
 func validSiteID(v string) bool {
@@ -547,7 +560,13 @@ func (s *Store) CreateSite(actor User, in SiteInput) (Site, error) {
 	if siteID == "" {
 		siteID = newID("site")
 	}
-	site := Site{ID: siteID, Code: in.Code, Name: in.Name, TimeZone: strings.TrimSpace(in.TimeZone), Active: active, CreatedAt: now, UpdatedAt: now}
+	if in.Latitude != nil && (*in.Latitude < -90 || *in.Latitude > 90) {
+		return Site{}, errors.New("latitude out of range")
+	}
+	if in.Longitude != nil && (*in.Longitude < -180 || *in.Longitude > 180) {
+		return Site{}, errors.New("longitude out of range")
+	}
+	site := Site{ID: siteID, Code: in.Code, Name: in.Name, Client: strings.TrimSpace(in.Client), Address: strings.TrimSpace(in.Address), Latitude: in.Latitude, Longitude: in.Longitude, TechnicalContact: strings.TrimSpace(in.TechnicalContact), TimeZone: strings.TrimSpace(in.TimeZone), Active: active, CreatedAt: now, UpdatedAt: now}
 	if site.TimeZone == "" {
 		site.TimeZone = "UTC"
 	}
@@ -555,7 +574,7 @@ func (s *Store) CreateSite(actor User, in SiteInput) (Site, error) {
 		return Site{}, errors.New("invalid time zone")
 	}
 	s.state.Sites = append(s.state.Sites, site)
-	s.auditLocked(actor, "admin.site.create", "site", site.ID, "success", nil)
+	s.auditLocked(actor, "admin.site.create", "site", site.ID, "success", map[string]string{"after": auditJSON(site)})
 	if err := s.saveLocked(); err != nil {
 		return Site{}, err
 	}
@@ -569,6 +588,7 @@ func (s *Store) UpdateSite(actor User, id string, in SiteInput) (Site, error) {
 		if x.ID != id {
 			continue
 		}
+		before := *x
 		if strings.TrimSpace(in.Code) != "" {
 			candidateCode := strings.TrimSpace(in.Code)
 			for j := range s.state.Sites {
@@ -588,11 +608,32 @@ func (s *Store) UpdateSite(actor User, id string, in SiteInput) (Site, error) {
 			}
 			x.TimeZone = in.TimeZone
 		}
+		if in.Client != "" {
+			x.Client = strings.TrimSpace(in.Client)
+		}
+		if in.Address != "" {
+			x.Address = strings.TrimSpace(in.Address)
+		}
+		if in.TechnicalContact != "" {
+			x.TechnicalContact = strings.TrimSpace(in.TechnicalContact)
+		}
+		if in.Latitude != nil {
+			if *in.Latitude < -90 || *in.Latitude > 90 {
+				return Site{}, errors.New("latitude out of range")
+			}
+			x.Latitude = in.Latitude
+		}
+		if in.Longitude != nil {
+			if *in.Longitude < -180 || *in.Longitude > 180 {
+				return Site{}, errors.New("longitude out of range")
+			}
+			x.Longitude = in.Longitude
+		}
 		if in.Active != nil {
 			x.Active = *in.Active
 		}
 		x.UpdatedAt = time.Now().UTC()
-		s.auditLocked(actor, "admin.site.update", "site", x.ID, "success", nil)
+		s.auditLocked(actor, "admin.site.update", "site", x.ID, "success", map[string]string{"before": auditJSON(before), "after": auditJSON(*x)})
 		if err := s.saveLocked(); err != nil {
 			return Site{}, err
 		}
@@ -649,6 +690,32 @@ type CommissioningInput struct {
 	ChangeReason       string             `json:"changeReason"`
 }
 
+func (s *Store) canonicalizeControllerProfileLocked(controller ControllerIdentity) ControllerIdentity {
+	controller.ProfileID = strings.TrimSpace(controller.ProfileID)
+	controller.ProfileStatus = "DRAFT"
+	if controller.ProfileID == "" {
+		return controller
+	}
+	if rec, ok := s.state.ProfileStates[controller.ProfileID]; ok {
+		controller.ProfileStatus = rec.Status
+		if rec.Version != "" {
+			controller.ProfileVersion = rec.Version
+		}
+	}
+	return controller
+}
+
+func (s *Store) ProfileState(profileID string) (ProfileLifecycleRecord, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rec, ok := s.state.ProfileStates[strings.TrimSpace(profileID)]
+	return rec, ok
+}
+
+func profileStatusCommissionable(status string) bool {
+	return status == "LAB" || status == "HIL_VALIDATED" || status == "HOMOLOGATED"
+}
+
 func (s *Store) CreateCommissioning(actor User, in CommissioningInput) (Commissioning, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -663,6 +730,7 @@ func (s *Store) CreateCommissioning(actor User, in CommissioningInput) (Commissi
 	if !allowedSite(actor, in.SiteID) {
 		return Commissioning{}, errors.New("site outside user scope")
 	}
+	in.Controller = s.canonicalizeControllerProfileLocked(in.Controller)
 	now := time.Now().UTC()
 	gates := map[string]GateResult{}
 	for _, stage := range CommissioningStages {
@@ -706,7 +774,7 @@ func (s *Store) UpdateCommissioning(actor User, id string, in CommissioningInput
 			c.SiteID = in.SiteID
 		}
 		c.Asset = in.Asset
-		c.Controller = in.Controller
+		c.Controller = s.canonicalizeControllerProfileLocked(in.Controller)
 		c.ECU = in.ECU
 		c.Transport = in.Transport
 		c.RapidPlanHash = in.RapidPlanHash
@@ -737,6 +805,9 @@ func (s *Store) SetGate(actor User, id, stage string, in GateInput) (Commissioni
 	defer s.mu.Unlock()
 	if in.Status != GatePass && in.Status != GateFail && in.Status != GateBlocked && in.Status != GatePending {
 		return Commissioning{}, errors.New("invalid gate status")
+	}
+	if in.Status == GatePass && strings.TrimSpace(in.Evidence) == "" {
+		return Commissioning{}, errors.New("PASS requires objective evidence")
 	}
 	for i := range s.state.Commissionings {
 		c := &s.state.Commissionings[i]
@@ -922,6 +993,19 @@ func (s *Store) DisableMFA(actor User, id string) (PublicUser, error) {
 	return PublicUser{}, errors.New("user not found")
 }
 
+func (s *Store) AuditForObject(objectType, objectID string) []AuditEvent {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := []AuditEvent{}
+	for _, event := range s.state.Audit {
+		if event.ObjectType == objectType && event.ObjectID == objectID {
+			out = append(out, event)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].At.Before(out[j].At) })
+	return out
+}
+
 func (s *Store) Audit(limit int) []AuditEvent {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -937,6 +1021,14 @@ func (s *Store) Audit(limit int) []AuditEvent {
 	sort.Slice(out, func(i, j int) bool { return out[i].At.After(out[j].At) })
 	return out
 }
+func auditJSON(v any) string {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return "{}"
+	}
+	return string(b)
+}
+
 func (s *Store) auditLocked(actor User, action, objType, objID, result string, details map[string]string) {
 	s.state.Audit = append(s.state.Audit, AuditEvent{ID: newID("aud"), At: time.Now().UTC(), ActorUserID: actor.ID, ActorUsername: actor.Username, Action: action, ObjectType: objType, ObjectID: objID, Result: result, Details: details, CorrelationID: newID("corr"), Source: "rc-admin"})
 	if len(s.state.Audit) > 5000 {

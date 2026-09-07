@@ -69,7 +69,9 @@ jobs:
         run: |
           go build -trimpath ./cmd/rc-gateway
           go build -trimpath ./cmd/rc-monitor
+          go build -trimpath ./cmd/rc-admin
           ./rc-monitor --version
+          ./rc-admin --version
       - name: Validate production examples
         run: |
           ./rc-gateway --version

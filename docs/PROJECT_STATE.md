@@ -3,7 +3,7 @@
 <!-- PROJECT_STATE_SCHEMA: 2 -->
 <!-- CANONICAL_HANDOFF: true -->
 <!-- CURRENT_CODE_BRANCH: feature/frontend-contract -->
-<!-- CURRENT_DEVELOPMENT_TASK: UI-004 -->
+<!-- CURRENT_DEVELOPMENT_TASK: REL-003 -->
 <!-- EXTERNAL_RUNNING_GATE: none -->
 <!-- PRODUCTION_VALIDATED: false -->
 <!-- PR2_MUST_REMAIN_DRAFT: true -->
@@ -143,9 +143,9 @@ production_validated=false
 
 Isso fecha serving/deployment reproduzível do frontend e a vertical Rapid -> RC Monitor -> frontend em ambiente simulado. Não fecha SEM real, HIL ou produção.
 
-## Frontend / UI-004
+## Frontend / UI-004 — código fechado; validação final na `tes` pendente
 
-Rotas atuais:
+Rotas do produto atual:
 
 ```text
 /
@@ -153,10 +153,29 @@ Rotas atuais:
 /generators/:id
 /alarms
 /events
+/history
 /communication
+/settings
+/about
+/account/security
+/engineering/commissioning
+/engineering/commissioning/new
+/engineering/commissioning/:id
+/engineering/commissioning/:id/edit
+/engineering/profiles
+/engineering/profiles/:profileId
+/engineering/bindings
+/engineering/diagnostics
+/admin/users
+/admin/roles
+/admin/sites
+/admin/audit
+/admin/system
 ```
 
-Sem START/STOP/RESET/TEST/TRANSFER/setpoints/acknowledge. `good/stale/offline/bad/unknown`, ausência e zero seguem o contrato. `capabilities/profile` read-only continua gap conhecido para distinguir `unsupported` de ausência transitória e pertence ao trabalho seguinte de HMI adaptativa/edge cases.
+Capabilities e histórico estão conectados ao backend real. A HMI distingue `ABSENT` de `UNSUPPORTED` e preserva `good/stale/offline/bad/unknown` e zero real. Login/MFA/RBAC/CSRF protegem o BFF operacional; o Nginx não publica o RC Monitor operacional diretamente. Sem START/STOP/RESET/TEST/TRANSFER/setpoints/acknowledge.
+
+A matriz de fechamento dos 28 itens software/LAB está em `docs/SOFTWARE_LAB_28.md`.
 
 ## Política de controladoras
 
@@ -193,21 +212,26 @@ GenMon é referência funcional/factual clean-room, não fonte para copiar códi
 | UI-001 | DONE | Contratos de produto/HMI/commissioning congelados. |
 | UI-002 | DONE | Shell + primeira vertical frontend real. |
 | UI-003 | DONE | Release/frontend/Nginx/orquestrador LAB reproduzível e E2E Rapid -> Monitor -> frontend validado em VM limpa. |
-| UI-004 | NEXT | Ampliar edge cases, regressão responsiva/visual e capability/profile read-only. |
+| UI-004 | DONE | Capabilities/history, edge cases de quality, responsividade/a11y e superfícies operacionais/admin/engenharia implementadas; validação final pertence a REL-003. |
 | REL-001 | TODO | Confirmar proteção de main. |
 | REL-002 | DONE | Release inclui Gateway, Monitor e frontend; validation/dry-run reproduzíveis. |
+| REL-003 | IN_PROGRESS | Fechar 28/28 software/LAB: gates finais, release candidata, deploy/acceptance/recovery na tes e sincronização Git/GitHub. |
+| VM-CLEAN-001 | NEXT | Criar VM Ubuntu limpa somente depois de REL-003 DONE e 28/28 PASS_TES. |
 | PROD-001 | BLOCKED | Exige SOAK verificado + SEM real + HIL + aprovação. |
 <!-- CHECKLIST_END -->
 
 ## Próximo passo exato
 
 ```text
-1. deixar CI/CodeQL do HEAD deste handoff totalmente verde;
-2. iniciar UI-004: edge cases, responsividade/visual e capability/profile read-only;
-3. localizar e validar o relatório real de SOAK-001 antes de qualquer toque na VM original;
-4. executar SEM-001 com canais Rapid reais quando a configuração real estiver disponível;
-5. HIL-001/HIL-002 continuam bloqueados até hardware/meio físico disponível;
-6. CMD-001 permanece DEFERRED e PROD-001 permanece BLOCKED.
+1. executar gates finais locais (Go/frontend/security/contracts);
+2. construir release candidata com SBOM Go + frontend e validar archive;
+3. instalar na tes preservando rollback;
+4. validar Login + senha + MFA + seis roles + Sites;
+5. executar commissioning LAB, Change Commissioning, Histórico/Bindings/Profiles;
+6. executar outage/recovery/reboot e acceptance;
+7. marcar docs/SOFTWARE_LAB_28.md como 28/28 PASS_TES;
+8. commit/push do branch e conferir CI + CodeQL;
+9. somente depois criar VM limpa para prova independente de instalação.
 ```
 
-`PRODUCTION_VALIDATED=false`.
+`PRODUCTION_VALIDATED=false`. HIL físico, SEM real de campo e produção permanecem gates externos separados.

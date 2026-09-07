@@ -34,6 +34,7 @@ async function getJson(path: string): Promise<unknown> {
   });
 
   if (!response.ok) {
+    if (response.status === 401 && typeof window !== "undefined") window.dispatchEvent(new Event("rc-auth-expired"));
     let code: string | undefined;
     let message = `HTTP ${response.status}`;
     try {

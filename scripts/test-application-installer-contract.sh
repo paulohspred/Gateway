@@ -9,11 +9,12 @@ ADMIN="$ROOT_DIR/scripts/install-rc-admin.sh"
 ADMIN_ACCEPT="$ROOT_DIR/scripts/rc-admin-acceptance.sh"
 FRONTEND="$ROOT_DIR/scripts/install-rc-frontend.sh"
 RAPID_API="$ROOT_DIR/scripts/configure-rapid-web-api.sh"
+RAPID_PLAN="$ROOT_DIR/scripts/apply-rapid-plan.sh"
 LAB="$ROOT_DIR/scripts/install-rc-lab-stack.sh"
 ACCEPT="$ROOT_DIR/scripts/rc-frontend-acceptance.sh"
 LAB_BINDING="$ROOT_DIR/controllers/rc-simulator/reference-controller/rapid/channels.rapid-demo-lab.json"
 
-for file in "$BUILD" "$RELEASE" "$MONITOR" "$ADMIN" "$ADMIN_ACCEPT" "$FRONTEND" "$RAPID_API" "$LAB" "$ACCEPT" "$LAB_BINDING"; do
+for file in "$BUILD" "$RELEASE" "$MONITOR" "$ADMIN" "$ADMIN_ACCEPT" "$FRONTEND" "$RAPID_API" "$RAPID_PLAN" "$LAB" "$ACCEPT" "$LAB_BINDING"; do
   [[ -f "$file" ]] || { echo "ERRO: contrato referencia arquivo ausente: $file" >&2; exit 1; }
 done
 
@@ -22,6 +23,8 @@ grep -Fq 'frontend/package-lock.json' "$BUILD"
 grep -Fq 'npm ci --no-audit --no-fund' "$BUILD"
 grep -Fq 'component=rc-monitor-frontend' "$BUILD"
 grep -Fq 'component=rc-admin' "$BUILD"
+grep -Fq 'npm sbom --sbom-format cyclonedx' "$BUILD"
+grep -Fq 'frontend-sbom.cdx.json' "$BUILD"
 grep -Fq 'install-rc-lab-stack.sh' "$BUILD"
 grep -Fq 'cp -R "$FRONTEND_DIR/dist/." "$stage/frontend/"' "$BUILD"
 grep -Fq '[[ -x "$pkg/bin/rc-monitor" ]]' "$RELEASE"
@@ -70,6 +73,14 @@ grep -Fq 'rb'"'"'\1false\2'"'"'' "$RAPID_API"
 grep -Fq 'RAPID WEB API OK: auth=true command=false' "$RAPID_API"
 echo "Rapid Web API read-only contract: OK"
 
+# Rapid plan apply is privileged, reproducible and rollback-capable; never a browser path.
+grep -Fq 'aplicação real exige --approve APPLY' "$RAPID_PLAN"
+grep -Fq 'rapid-plan-snapshots' "$RAPID_PLAN"
+grep -Fq 'trap rollback ERR' "$RAPID_PLAN"
+grep -Fq 'AllowCommandApi' "$RAPID_PLAN"
+grep -Fq 'path traversal não permitido' "$RAPID_PLAN"
+echo "Rapid plan staging/apply/rollback contract: OK"
+
 # Frontend serving is from the packaged release; browser never proxies to Rapid.
 grep -Fq 'FRONTEND_ROOT="$ROOT/current/frontend"' "$FRONTEND"
 grep -Fq 'location /api/' "$FRONTEND"
@@ -108,6 +119,9 @@ grep -Fq 'only GET is allowed' "$ACCEPT"
 grep -Fq 'Cache-Control: no-store' "$ACCEPT"
 grep -Fq 'immutable' "$ACCEPT"
 grep -Fq '10008 18080 18100' "$ACCEPT"
+grep -Fq '/engineering/profiles' "$ACCEPT"
+grep -Fq '/admin/audit' "$ACCEPT"
+grep -Fq '/history' "$ACCEPT"
 echo "deployed frontend acceptance contract: OK"
 
 echo "APPLICATION INSTALLER CONTRACT PASSED"

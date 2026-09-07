@@ -29,11 +29,17 @@ export function UsersPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [createdSecret, setCreatedSecret] = useState("");
   const [message, setMessage] = useState("");
+  const [search, setSearch] = useState("");
+  const [roleFilter, setRoleFilter] = useState<"all" | Role>("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
   const [editing, setEditing] = useState<PublicUser | null>(null);
   const [edit, setEdit] = useState<EditForm | null>(null);
   const [form, setForm] = useState({ username: "", displayName: "", role: "viewer" as Role, siteScopes: [] as string[], temporaryPassword: "", mfaRequired: false });
   const canWrite = auth.hasPermission("users.write");
-  const rows = useMemo(() => users.data ?? [], [users.data]);
+  const rows = useMemo(() => {
+    const needle = search.trim().toLocaleLowerCase("pt-BR");
+    return (users.data ?? []).filter((u) => roleFilter === "all" || u.role === roleFilter).filter((u) => statusFilter === "all" || (statusFilter === "active" ? u.active : !u.active)).filter((u) => !needle || [u.username,u.displayName,u.role,...u.siteScopes].some((value) => value.toLocaleLowerCase("pt-BR").includes(needle)));
+  }, [users.data, search, roleFilter, statusFilter]);
   const refresh = () => void qc.invalidateQueries({ queryKey: ["admin-users"] });
   const create = useMutation({
     mutationFn: () => controlApi.createUser(auth.csrf, form),
@@ -85,7 +91,7 @@ export function UsersPage() {
         <label className="check-row"><input type="checkbox" checked={edit.mfaRequired} disabled={edit.role === "administrator" || edit.role === "commissioning_engineer"} onChange={(e) => setEdit({ ...edit, mfaRequired: e.target.checked })}/>Exigir MFA</label>
         <div className="row-actions"><button onClick={() => { setEditing(null); setEdit(null); }}>Cancelar</button><button className="primary-button" onClick={() => void saveEdit()}>Salvar alterações</button></div>
       </div></Panel> : null}
-      <Panel title={`Usuários (${rows.length})`}><div className="table-wrap"><table className="data-table"><thead><tr><th>Usuário</th><th>Perfil</th><th>Sites</th><th>MFA</th><th>Status</th><th>Último login</th><th>Ações</th></tr></thead><tbody>{rows.map((u) => <tr key={u.id}>
+      <Panel title={`Usuários (${rows.length})`} action={<div className="filter-row"><select className="filter-input" value={roleFilter} onChange={(e)=>setRoleFilter(e.target.value as "all" | Role)}><option value="all">Todos os perfis</option>{roles.data?.map((r)=><option key={r.id} value={r.id}>{labels[r.id]}</option>)}</select><select className="filter-input" value={statusFilter} onChange={(e)=>setStatusFilter(e.target.value as "all" | "active" | "inactive")}><option value="all">Todos os status</option><option value="active">Ativos</option><option value="inactive">Inativos</option></select><input className="filter-input" value={search} onChange={(e)=>setSearch(e.target.value)} placeholder="Buscar usuário, nome, site"/></div>}><div className="table-wrap"><table className="data-table"><thead><tr><th>Usuário</th><th>Perfil</th><th>Sites</th><th>MFA</th><th>Status</th><th>Último login</th><th>Ações</th></tr></thead><tbody>{rows.map((u) => <tr key={u.id}>
         <td><strong>{u.displayName}</strong><br/><small>{u.username}</small></td><td>{labels[u.role]}</td><td>{u.siteScopes.includes("*") ? "TODOS" : u.siteScopes.join(", ") || "—"}</td>
         <td><StatusBadge tone={u.mfaEnabled ? "healthy" : u.mfaRequired ? "warning" : "unknown"}>{u.mfaEnabled ? "ATIVO" : u.mfaRequired ? "PENDENTE" : "OPCIONAL"}</StatusBadge></td>
         <td><StatusBadge tone={u.active ? "healthy" : "offline"}>{u.active ? "ATIVO" : "INATIVO"}</StatusBadge></td><td>{formatDateTime(u.lastLoginAt)}</td>

@@ -27,8 +27,10 @@ BUILD_TOOL_DIR=""
 
 cleanup_tools(){
   [[ -z "$BUILD_TOOL_DIR" ]] || rm -rf "$BUILD_TOOL_DIR"
+  [[ -z "${FRONTEND_SBOM:-}" ]] || rm -f "$FRONTEND_SBOM"
 }
 trap cleanup_tools EXIT
+FRONTEND_SBOM=""
 
 resolve_go(){
   GO_BIN="${GO_BIN:-}"
@@ -93,6 +95,15 @@ echo "Construindo frontend com Node $actual_node e npm $(npm --version)..."
 )
 [[ -f "$FRONTEND_DIR/dist/index.html" ]] || { echo "ERRO: frontend/dist/index.html não foi gerado" >&2; exit 4; }
 find "$FRONTEND_DIR/dist/assets" -maxdepth 1 -type f -name 'index-*.js' -print -quit | grep -q . || { echo "ERRO: bundle frontend hashed ausente" >&2; exit 4; }
+FRONTEND_SBOM="$(mktemp)"
+( cd "$FRONTEND_DIR" && npm sbom --sbom-format cyclonedx ) > "$FRONTEND_SBOM"
+python3 - "$FRONTEND_SBOM" <<'PY'
+import json,sys
+p=sys.argv[1]
+d=json.load(open(p,encoding="utf-8"))
+assert d.get("bomFormat") == "CycloneDX"
+assert isinstance(d.get("components"), list) and d["components"]
+PY
 
 rm -rf "$DIST_DIR"
 mkdir -p "$DIST_DIR"
@@ -114,8 +125,9 @@ for arch in $ARCHES; do
   cp controllers/DRAFT_PROFILES.json controllers/README.md controllers/REFERENCE_CATALOG.md "$stage/controllers/"
   cp -R controllers/rc-simulator "$stage/controllers/"
   cp -R "$FRONTEND_DIR/dist/." "$stage/frontend/"
+  cp "$FRONTEND_SBOM" "$stage/frontend-sbom.cdx.json"
 
-  cp scripts/install-release.sh scripts/install-scada-stack.sh scripts/install-rc-monitor.sh scripts/install-rc-admin.sh scripts/install-rc-frontend.sh scripts/install-rc-lab-stack.sh scripts/configure-rapid-web-api.sh scripts/rc-frontend-acceptance.sh scripts/rc-admin-acceptance.sh scripts/rollback-release.sh scripts/probe-usb-hid.sh scripts/collect-diagnostics.sh scripts/vm-acceptance.sh scripts/run-soak.sh scripts/rapid-scada-acceptance.sh scripts/rapid-scada-production-acceptance.sh "$stage/scripts/"
+  cp scripts/install-release.sh scripts/install-scada-stack.sh scripts/install-rc-monitor.sh scripts/install-rc-admin.sh scripts/install-rc-frontend.sh scripts/install-rc-lab-stack.sh scripts/configure-rapid-web-api.sh scripts/rc-frontend-acceptance.sh scripts/rc-admin-acceptance.sh scripts/rollback-release.sh scripts/probe-usb-hid.sh scripts/collect-diagnostics.sh scripts/vm-acceptance.sh scripts/run-soak.sh scripts/rapid-scada-acceptance.sh scripts/rapid-scada-production-acceptance.sh scripts/apply-rapid-plan.sh "$stage/scripts/"
   cp docs/RUNBOOK.md docs/USB_HID_COMAP.md docs/COMPATIBILITY_MATRIX.md docs/PRODUCTION_MATRIX.md docs/VM_ACCEPTANCE.md docs/THREAT_MODEL.md docs/PROFESSIONALIZATION_PLAN.md docs/CONFIGURATION_COMPATIBILITY.md docs/RAPID_SCADA_INTEGRATION.md docs/GENERATOR_SCADA_PRODUCTION_READINESS.md docs/SCADA_STACK_INSTALLER.md docs/RC_MONITOR_OPERATIONS.md docs/RAPID_SCADA_MONITOR_BINDING.md "$stage/docs/"
   cp README.md SECURITY.md SUPPORT.md CHANGELOG.md LICENSE NOTICE THIRD_PARTY_NOTICES.md "$stage/"
   chmod 0755 "$stage/bin/rc-gateway" "$stage/bin/rc-monitor" "$stage/bin/rc-admin" "$stage/scripts/"*.sh

@@ -9,6 +9,7 @@ export function AuthProvider({children}:{children:ReactNode}){
  const [session,setSession]=useState<AuthSession|null>(null);const [loading,setLoading]=useState(true);
  const refresh=useCallback(async()=>{try{setSession(await controlApi.me())}catch(e){if(e instanceof ApiError&&e.status===401)setSession(null);else throw e}finally{setLoading(false)}},[]);
  useEffect(()=>{void refresh()},[refresh]);
+ useEffect(()=>{ const expired=()=>setSession(null); window.addEventListener("rc-auth-expired",expired); return()=>window.removeEventListener("rc-auth-expired",expired); },[]);
  useEffect(()=>{ const prefs=session?.user.preferences; if(prefs){ setPresentationTimeZone(prefs.timeZone); document.documentElement.lang=prefs.language; } },[session?.user.preferences]);
  const login=useCallback(async(username:string,password:string,totp?:string)=>{const next=await controlApi.login(username,password,totp);setSession(next);return next},[]);
  const logout=useCallback(async()=>{if(session?.csrfToken){try{await controlApi.logout(session.csrfToken)}finally{setSession(null)}}else setSession(null)},[session]);

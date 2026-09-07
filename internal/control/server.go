@@ -360,6 +360,7 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request, u User, sess Ses
 	s.mu.Lock()
 	delete(s.sessions, sess.Token)
 	s.mu.Unlock()
+	s.store.RecordLogout(u)
 	http.SetCookie(w, &http.Cookie{Name: "rc_session", Value: "", Path: "/", HttpOnly: true, Secure: s.opt.CookieSecure, SameSite: http.SameSiteStrictMode, MaxAge: -1})
 	writeJSON(w, 200, map[string]string{"status": "logged_out"})
 }
@@ -523,12 +524,12 @@ func (s *Server) userResource(w http.ResponseWriter, r *http.Request, u User, se
 	}
 	id := parts[0]
 	if len(parts) == 1 && r.Method == http.MethodGet {
-		out, ok := s.store.CommissioningByID(u, id)
+		out, ok := s.store.UserByID(id)
 		if !ok {
-			writeError(w, 404, "not_found", "commissioning not found")
+			writeError(w, 404, "not_found", "user not found")
 			return
 		}
-		writeJSON(w, 200, out)
+		writeJSON(w, 200, out.Public())
 		return
 	}
 	if len(parts) == 1 && r.Method == http.MethodPatch {
@@ -966,7 +967,7 @@ type commissioningPreflight struct {
 	Pass            bool             `json:"pass"`
 }
 
-func (s *Server) runPreflight(c Commissioning) commissioningPreflight {
+func (s *Server) runPreflight(ctx context.Context, c Commissioning) commissioningPreflight {
 	checks := []preflightCheck{}
 	add := func(id string, ok bool, msg string) {
 		status := "FAIL"
@@ -989,12 +990,37 @@ func (s *Server) runPreflight(c Commissioning) commissioningPreflight {
 		transportOK = transportOK && strings.TrimSpace(c.Transport.Host) != "" && c.Transport.Port > 0 && c.Transport.Port <= 65535
 	}
 	add("transport", transportOK, "transport fields structurally valid")
+	if transportOK && strings.EqualFold(c.Transport.Kind, "TCP/IP") {
+		dialCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+		conn, err := (&net.Dialer{}).DialContext(dialCtx, "tcp", net.JoinHostPort(c.Transport.Host, strconv.Itoa(c.Transport.Port)))
+		if err == nil {
+			_ = conn.Close()
+		}
+		add("transport_reachable", err == nil, "TCP endpoint reachable from RC Admin")
+	}
 	profileOK := strings.TrimSpace(c.Controller.ProfileID) != ""
 	add("profile", profileOK, "controller profile selected")
+	profileState, profileStateOK := s.store.ProfileState(c.Controller.ProfileID)
+	qualified := profileStateOK && profileStatusCommissionable(profileState.Status)
+	add("profile_qualification", qualified, "canonical profile lifecycle is LAB, HIL_VALIDATED or HOMOLOGATED")
 	rapidOK := c.RapidPlanHash == "" || len(c.RapidPlanHash) == 64
 	add("rapid_plan_hash", rapidOK, "Rapid plan SHA-256 is empty/pending or 64 hex chars")
 	monitorOK := strings.TrimSpace(c.MonitorGeneratorID) != ""
 	add("monitor_link", monitorOK, "operational RC Monitor generatorId linked")
+	if monitorOK {
+		path := "/api/v1/generators/" + url.PathEscape(c.MonitorGeneratorID) + "/capabilities"
+		status, body, _, err := s.monitorGET(ctx, path)
+		available := err == nil && status == http.StatusOK
+		add("monitor_generator", available, "linked generator capabilities available from RC Monitor")
+		if available {
+			var caps monitorCapabilities
+			if json.Unmarshal(body, &caps) == nil {
+				profileMatch := caps.ProfileID == "" || c.Controller.ProfileID == "" || caps.ProfileID == c.Controller.ProfileID
+				add("profile_match", profileMatch, "commissioning profile matches RC Monitor capabilities")
+			}
+		}
+	}
 	pass := true
 	for _, x := range checks {
 		if x.Status != "PASS" {
@@ -1009,8 +1035,10 @@ type monitorCapabilityMetric struct {
 	Required bool   `json:"required"`
 }
 type monitorCapabilities struct {
-	GeneratorID string                    `json:"generatorId"`
-	Metrics     []monitorCapabilityMetric `json:"metrics"`
+	GeneratorID   string                    `json:"generatorId"`
+	ProfileID     string                    `json:"profileId"`
+	ProfileStatus string                    `json:"profileStatus"`
+	Metrics       []monitorCapabilityMetric `json:"metrics"`
 }
 type monitorMetric struct {
 	Quality string `json:"quality"`
@@ -1110,6 +1138,25 @@ func (s *Server) commissioningResource(w http.ResponseWriter, r *http.Request, u
 		writeJSON(w, http.StatusOK, out)
 		return
 	}
+	if len(parts) == 2 && parts[1] == "evidence" && r.Method == http.MethodGet {
+		c, ok := s.store.CommissioningByID(u, id)
+		if !ok {
+			writeError(w, http.StatusNotFound, "not_found", "commissioning not found")
+			return
+		}
+		profileState, hasProfileState := s.store.ProfileState(c.Controller.ProfileID)
+		payload := map[string]any{
+			"schema":        1,
+			"commissioning": c,
+			"audit":         s.store.AuditForObject("commissioning", c.ID),
+			"generatedAt":   time.Now().UTC(),
+		}
+		if hasProfileState {
+			payload["profileState"] = profileState
+		}
+		writeJSON(w, http.StatusOK, payload)
+		return
+	}
 	if len(parts) == 1 && r.Method == http.MethodPatch {
 		if !HasPermission(u.Role, PermCommissioningWrite) {
 			writeError(w, 403, "forbidden", "permission denied")
@@ -1136,7 +1183,12 @@ func (s *Server) commissioningResource(w http.ResponseWriter, r *http.Request, u
 		if !decodeJSON(w, r, &in) {
 			return
 		}
-		out, err := s.store.SetGate(u, id, strings.ToUpper(parts[2]), in)
+		stage := strings.ToUpper(parts[2])
+		if stage == "TELEMETRY_VALIDATION" {
+			writeError(w, 409, "automated_gate_required", "TELEMETRY_VALIDATION can only be updated by automated validation")
+			return
+		}
+		out, err := s.store.SetGate(u, id, stage, in)
 		if err != nil {
 			writeError(w, 400, "gate_update_failed", err.Error())
 			return
@@ -1154,7 +1206,7 @@ func (s *Server) commissioningResource(w http.ResponseWriter, r *http.Request, u
 			writeError(w, 404, "not_found", "commissioning not found")
 			return
 		}
-		writeJSON(w, 200, s.runPreflight(c))
+		writeJSON(w, 200, s.runPreflight(r.Context(), c))
 		return
 	}
 	if len(parts) == 2 && parts[1] == "validate-telemetry" && r.Method == http.MethodPost {
@@ -1202,6 +1254,11 @@ func (s *Server) commissioningResource(w http.ResponseWriter, r *http.Request, u
 		candidate, ok := s.store.CommissioningByID(u, id)
 		if !ok {
 			writeError(w, 404, "not_found", "commissioning not found")
+			return
+		}
+		profileState, profileOK := s.store.ProfileState(candidate.Controller.ProfileID)
+		if !profileOK || !profileStatusCommissionable(profileState.Status) {
+			writeError(w, 409, "commissioning_promote_failed", "canonical controller profile must be LAB, HIL_VALIDATED or HOMOLOGATED")
 			return
 		}
 		if strings.TrimSpace(candidate.MonitorGeneratorID) == "" {

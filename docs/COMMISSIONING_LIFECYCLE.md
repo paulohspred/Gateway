@@ -254,6 +254,12 @@ Requisitos:
 - validar o resultado da configuração;
 - manter comandos do Rapid desabilitados no ciclo read-only.
 
+#### Mecanismo implementado de staging/apply/rollback
+
+O release inclui `scripts/apply-rapid-plan.sh`. Ele opera fora do browser e do RC Monitor, aceita somente arquivos relativos sob `/opt/scada/Config`, rejeita symlinks/path traversal, verifica `SHA256SUMS` e `PLAN_SHA256`, exige `--approve APPLY` para uma mutação real e cria snapshot em `/var/lib/rc-scada-stack/rapid-plan-snapshots`. Depois do apply reinicia somente os serviços configurados e executa validação; qualquer falha restaura o snapshot. `AllowCommandApi=false` continua sendo um pós-requisito obrigatório.
+
+O mecanismo não gera registradores nem inventa um plano: conteúdo e diff continuam sendo artefatos de Engenharia. Em LAB, a prova de mecanismo pode usar um plano no-op com o mesmo conteúdo atual.
+
 ### G7 — validação de telemetria
 
 Um gerador só pode ser promovido quando:

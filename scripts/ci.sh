@@ -65,6 +65,7 @@ PY
   fi
 done
 
+bash scripts/test-rapid-plan-apply.sh
 bash -n scripts/*.sh
 
 trap - EXIT

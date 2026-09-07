@@ -31,7 +31,10 @@ jobs:
         with:
           languages: go
       - name: Build
-        run: go build -trimpath ./cmd/rc-gateway
+        run: |
+          go build -trimpath ./cmd/rc-gateway
+          go build -trimpath ./cmd/rc-monitor
+          go build -trimpath ./cmd/rc-admin
       - name: Analyze
         uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
         with:

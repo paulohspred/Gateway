@@ -3,10 +3,13 @@ package control
 import (
 	"bytes"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -151,11 +154,16 @@ func TestUserSiteCommissioningLifecycle(t *testing.T) {
 	monitorSiteID := ""
 	monitor := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		if r.URL.Path == "/api/v1/generators/gen-1" {
+		switch r.URL.Path {
+		case "/api/v1/generators/gen-1":
 			_ = json.NewEncoder(w).Encode(map[string]any{"id": "gen-1", "name": "Gerador 001", "siteId": monitorSiteID, "controller": map[string]string{"manufacturer": "Test", "model": "Test"}})
-			return
+		case "/api/v1/generators/gen-1/capabilities":
+			_ = json.NewEncoder(w).Encode(map[string]any{"generatorId": "gen-1", "profileId": "profile-test", "profileStatus": "LAB", "metrics": []map[string]any{{"key": "engine.rpm", "required": true}}})
+		case "/api/v1/generators/gen-1/telemetry":
+			_ = json.NewEncoder(w).Encode(map[string]any{"generatorId": "gen-1", "communication": "online", "metrics": map[string]any{"engine.rpm": map[string]any{"quality": "good"}}})
+		default:
+			http.NotFound(w, r)
 		}
-		http.NotFound(w, r)
 	}))
 	defer monitor.Close()
 	s.opt.MonitorBaseURL = monitor.URL
@@ -186,17 +194,35 @@ func TestUserSiteCommissioningLifecycle(t *testing.T) {
 	if w.Code != 201 {
 		t.Fatalf("user=%d %s", w.Code, w.Body.String())
 	}
-	w = request(t, s, http.MethodPost, "/api/v1/engineering/commissionings", map[string]any{"tag": "GEN-001", "name": "Gerador 001", "siteId": site.ID, "monitorGeneratorId": "gen-1"}, cookie, csrf)
+	w = request(t, s, http.MethodPatch, "/api/v1/engineering/profile-states/profile-test", map[string]any{"status": "LAB", "version": "lab-1", "evidence": "lab acceptance"}, cookie, csrf)
+	if w.Code != http.StatusOK {
+		t.Fatalf("profile state=%d %s", w.Code, w.Body.String())
+	}
+	w = request(t, s, http.MethodPost, "/api/v1/engineering/commissionings", map[string]any{"tag": "GEN-001", "name": "Gerador 001", "siteId": site.ID, "monitorGeneratorId": "gen-1", "controller": map[string]any{"manufacturer": "Test", "model": "Test", "profileId": "profile-test", "profileStatus": "HOMOLOGATED"}}, cookie, csrf)
 	if w.Code != 201 {
 		t.Fatalf("commissioning=%d %s", w.Code, w.Body.String())
 	}
 	var c Commissioning
 	_ = json.Unmarshal(w.Body.Bytes(), &c)
+	if c.Controller.ProfileStatus != "LAB" || c.Controller.ProfileVersion != "lab-1" {
+		t.Fatalf("profile status/version must be canonicalized: %+v", c.Controller)
+	}
 	for _, stage := range CommissioningStages {
+		if stage == "TELEMETRY_VALIDATION" {
+			continue
+		}
 		w = request(t, s, http.MethodPost, "/api/v1/engineering/commissionings/"+c.ID+"/gates/"+stage, map[string]string{"status": "PASS", "evidence": "test evidence"}, cookie, csrf)
 		if w.Code != 200 {
 			t.Fatalf("gate %s=%d %s", stage, w.Code, w.Body.String())
 		}
+	}
+	w = request(t, s, http.MethodPost, "/api/v1/engineering/commissionings/"+c.ID+"/gates/TELEMETRY_VALIDATION", map[string]string{"status": "PASS", "evidence": "manual"}, cookie, csrf)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("manual telemetry PASS must be rejected: %d %s", w.Code, w.Body.String())
+	}
+	w = request(t, s, http.MethodPost, "/api/v1/engineering/commissionings/"+c.ID+"/validate-telemetry", nil, cookie, csrf)
+	if w.Code != http.StatusOK || !bytes.Contains(w.Body.Bytes(), []byte(`"pass":true`)) {
+		t.Fatalf("automated telemetry validation=%d %s", w.Code, w.Body.String())
 	}
 	w = request(t, s, http.MethodPost, "/api/v1/engineering/commissionings/"+c.ID+"/promote", nil, cookie, csrf)
 	if w.Code != 200 {
@@ -444,6 +470,18 @@ func TestControlPlaneAdministrativeAndEngineeringEndpoints(t *testing.T) {
 		}
 	}))
 	defer monitor.Close()
+	monitorURL, err := url.Parse(monitor.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, monitorPortText, err := net.SplitHostPort(monitorURL.Host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	monitorPort, err := strconv.Atoi(monitorPortText)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	store, err := NewStore(filepath.Join(root, "state.json"), "admin", testCredential())
 	if err != nil {
@@ -491,12 +529,16 @@ func TestControlPlaneAdministrativeAndEngineeringEndpoints(t *testing.T) {
 	assertStatus(http.MethodGet, "/api/v1/engineering/bindings", nil, http.StatusOK)
 	assertStatus(http.MethodGet, "/api/v1/engineering/monitor-generators", nil, http.StatusOK)
 
-	w = assertStatus(http.MethodPost, "/api/v1/engineering/commissionings", map[string]any{"tag": "GEN-LAB", "name": "Generator Lab", "siteId": site.ID, "monitorGeneratorId": "g-lab", "controller": map[string]any{"manufacturer": "Vendor", "model": "Model", "profileId": "profile-a", "profileStatus": "LAB"}, "ecu": map[string]any{"manufacturer": "ECU", "model": "E1", "protocol": "J1939", "j1939": true}, "transport": map[string]any{"kind": "TCP/IP", "host": "127.0.0.1", "port": 502}}, http.StatusCreated)
+	w = assertStatus(http.MethodPost, "/api/v1/engineering/commissionings", map[string]any{"tag": "GEN-LAB", "name": "Generator Lab", "siteId": site.ID, "monitorGeneratorId": "g-lab", "controller": map[string]any{"manufacturer": "Vendor", "model": "Model", "profileId": "profile-a", "profileStatus": "LAB"}, "ecu": map[string]any{"manufacturer": "ECU", "model": "E1", "protocol": "J1939", "j1939": true}, "transport": map[string]any{"kind": "TCP/IP", "host": "127.0.0.1", "port": monitorPort}}, http.StatusCreated)
 	var commissioning Commissioning
 	if err := json.Unmarshal(w.Body.Bytes(), &commissioning); err != nil {
 		t.Fatal(err)
 	}
 	assertStatus(http.MethodGet, "/api/v1/engineering/commissionings/"+commissioning.ID, nil, http.StatusOK)
+	evidenceResp := assertStatus(http.MethodGet, "/api/v1/engineering/commissionings/"+commissioning.ID+"/evidence", nil, http.StatusOK)
+	if !bytes.Contains(evidenceResp.Body.Bytes(), []byte(`"schema":1`)) || !bytes.Contains(evidenceResp.Body.Bytes(), []byte(`"commissioning"`)) || !bytes.Contains(evidenceResp.Body.Bytes(), []byte(`"audit"`)) {
+		t.Fatalf("evidence package incomplete: %s", evidenceResp.Body.String())
+	}
 	w = assertStatus(http.MethodPost, "/api/v1/engineering/commissionings/"+commissioning.ID+"/preflight", nil, http.StatusOK)
 	if !bytes.Contains(w.Body.Bytes(), []byte(`"pass":true`)) {
 		t.Fatalf("preflight should pass: %s", w.Body.String())
@@ -544,5 +586,69 @@ func TestEmptyCollectionsSerializeAsArrays(t *testing.T) {
 	}
 	if audit := store.Audit(10); audit == nil || len(audit) != 0 {
 		t.Fatalf("audit must be non-nil empty slice: %#v", audit)
+	}
+}
+
+func TestRBACMatrixExact(t *testing.T) {
+	expected := map[Role][]Permission{
+		RoleViewer:                {PermFleetRead, PermAlarmRead, PermEventRead},
+		RoleOperator:              {PermFleetRead, PermAlarmRead, PermEventRead, PermDiagnosticsRead},
+		RoleTechnician:            {PermFleetRead, PermAlarmRead, PermEventRead, PermDiagnosticsRead, PermCommissioningRead, PermSystemRead, PermSettingsRead},
+		RoleCommissioningEngineer: {PermFleetRead, PermAlarmRead, PermEventRead, PermDiagnosticsRead, PermCommissioningRead, PermCommissioningWrite, PermCommissioningPromote, PermSitesRead, PermSystemRead, PermSettingsRead},
+		RoleAdministrator:         {PermFleetRead, PermAlarmRead, PermEventRead, PermDiagnosticsRead, PermCommissioningRead, PermCommissioningWrite, PermCommissioningPromote, PermUsersRead, PermUsersWrite, PermSitesRead, PermSitesWrite, PermAuditRead, PermSystemRead, PermSettingsRead, PermSettingsWrite},
+		RoleAuditor:               {PermFleetRead, PermAlarmRead, PermEventRead, PermCommissioningRead, PermAuditRead, PermSystemRead, PermSettingsRead},
+	}
+	for role, want := range expected {
+		got := PermissionsForRole(role)
+		if len(got) != len(want) {
+			t.Fatalf("%s permissions len=%d want=%d: %#v", role, len(got), len(want), got)
+		}
+		for i, permission := range want {
+			if got[i] != permission {
+				t.Fatalf("%s permission[%d]=%s want=%s", role, i, got[i], permission)
+			}
+		}
+	}
+}
+
+func TestSiteMetadataValidationAndAuditSnapshots(t *testing.T) {
+	store, _ := newTestServer(t)
+	actorPublic := store.ListUsers()[0]
+	actor, ok := store.UserByID(actorPublic.ID)
+	if !ok {
+		t.Fatal("bootstrap actor missing")
+	}
+	lat, lon := -23.5505, -46.6333
+	site, err := store.CreateSite(actor, SiteInput{ID: "site-sp", Code: "SP", Name: "Planta SP", Client: "Cliente A", Address: "Av. Teste, 100", Latitude: &lat, Longitude: &lon, TechnicalContact: "Plantão 24x7", TimeZone: "America/Sao_Paulo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if site.Client != "Cliente A" || site.Address == "" || site.Latitude == nil || site.Longitude == nil || site.TechnicalContact == "" {
+		t.Fatalf("site metadata=%+v", site)
+	}
+	badLat := 91.0
+	if _, err := store.CreateSite(actor, SiteInput{Code: "BAD", Name: "Bad", Latitude: &badLat, TimeZone: "UTC"}); err == nil {
+		t.Fatal("invalid latitude accepted")
+	}
+	newName := "Planta SP Atualizada"
+	updated, err := store.UpdateSite(actor, site.ID, SiteInput{Name: newName, TimeZone: "America/Sao_Paulo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Name != newName {
+		t.Fatalf("updated name=%q", updated.Name)
+	}
+	audit := store.Audit(10)
+	found := false
+	for _, event := range audit {
+		if event.Action == "admin.site.update" && event.ObjectID == site.ID {
+			if event.Details["before"] == "" || event.Details["after"] == "" {
+				t.Fatalf("before/after missing: %+v", event.Details)
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("site update audit missing")
 	}
 }
