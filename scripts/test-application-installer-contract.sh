@@ -9,8 +9,9 @@ FRONTEND="$ROOT_DIR/scripts/install-rc-frontend.sh"
 RAPID_API="$ROOT_DIR/scripts/configure-rapid-web-api.sh"
 LAB="$ROOT_DIR/scripts/install-rc-lab-stack.sh"
 ACCEPT="$ROOT_DIR/scripts/rc-frontend-acceptance.sh"
+LAB_BINDING="$ROOT_DIR/controllers/rc-simulator/reference-controller/rapid/channels.rapid-demo-lab.json"
 
-for file in "$BUILD" "$RELEASE" "$MONITOR" "$FRONTEND" "$RAPID_API" "$LAB" "$ACCEPT"; do
+for file in "$BUILD" "$RELEASE" "$MONITOR" "$FRONTEND" "$RAPID_API" "$LAB" "$ACCEPT" "$LAB_BINDING"; do
   [[ -f "$file" ]] || { echo "ERRO: contrato referencia arquivo ausente: $file" >&2; exit 1; }
 done
 
@@ -54,15 +55,18 @@ grep -Fq 'systemctl restart nginx.service' "$FRONTEND"
 grep -Fq 'restaurando site anterior' "$FRONTEND"
 echo "frontend Nginx isolation/cache/rollback contract: OK"
 
-# Full lab flow must remain explicitly synthetic and read-only.
+# Full lab flow must remain explicitly synthetic, checksummed and read-only.
 grep -Fq 'SIMULATION_TEST_ONLY' "$LAB"
 grep -Fq 'production_validated=false' "$LAB"
 grep -Fq 'rapid_commands=false' "$LAB"
 grep -Fq 'physical_controller=false' "$LAB"
+grep -Fq 'RAPID_CHECKSUM="$RAPID_SOURCE.sha256"' "$LAB"
+grep -Fq 'SHA256 do Rapid SCADA não confere' "$LAB"
 grep -Fq 'configure-rapid-web-api.sh' "$LAB"
 grep -Fq 'rc-monitor.rapid-demo-lab.json' "$LAB"
 grep -Fq 'rc-frontend-acceptance.sh' "$LAB"
-echo "lab orchestration safety contract: OK"
+grep -Fq '"events": []' "$LAB_BINDING"
+echo "lab orchestration safety/checksum/semantic contract: OK"
 
 # Deployed acceptance must prove browser-facing read-only semantics and internal
 # listener isolation rather than only service process status.
