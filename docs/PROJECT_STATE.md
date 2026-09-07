@@ -143,7 +143,7 @@ production_validated=false
 
 Isso fecha serving/deployment reproduzível do frontend e a vertical Rapid -> RC Monitor -> frontend em ambiente simulado. Não fecha SEM real, HIL ou produção.
 
-## Frontend / UI-004 — código fechado; validação final na `tes` pendente
+## Frontend / UI-004 — DONE; software/LAB 28/28 validado na `tes`
 
 Rotas do produto atual:
 
@@ -175,9 +175,30 @@ Rotas do produto atual:
 
 Capabilities e histórico estão conectados ao backend real. A HMI distingue `ABSENT` de `UNSUPPORTED` e preserva `good/stale/offline/bad/unknown` e zero real. Login/MFA/RBAC/CSRF protegem o BFF operacional; o Nginx não publica o RC Monitor operacional diretamente. Sem START/STOP/RESET/TEST/TRANSFER/setpoints/acknowledge.
 
-A matriz de fechamento dos 28 itens software/LAB está em `docs/SOFTWARE_LAB_28.md`.
+A matriz de fechamento dos 28 itens software/LAB está em `docs/SOFTWARE_LAB_28.md` e está em **28/28 `PASS_TES`**. O fechamento combina prova live da instalação (primeiro acesso/MFA, Monitor/Rapid, outage/recovery/restart/reboot) e testes de integração do commit exato executados na própria `tes` para RBAC/Sites/Commissioning; não implica objetos de teste persistentes nem HIL físico.
 
 O catálogo de Engenharia agrega também o pacote factual `rc-simulator.reference-controller` diretamente de `controllers/rc-simulator/reference-controller/{manifest,telemetry,alarms}.json`; ele não é inserido nas nove famílias físicas de `DRAFT_PROFILES.json`. Isso permite o commissioning LAB do `gen-sim-001` com o mesmo `profileId` informado por `/capabilities`, sem sugerir HIL/homologação.
+
+
+## REL-003 — fechamento software/LAB 2026-09-07
+
+Estado validado na `tes`:
+
+```text
+software/LAB: 28/28 PASS_TES
+source/GitHub tree: 23935277fc754e4c42fa2b2dd5e9dd7704ce823b
+source/GitHub HEAD antes do commit documental: d2e741a4d8e19cdd3da88857ceaefe23d611342c
+admin bootstrap password change: PASS live
+admin MFA TOTP: PASS live
+outage/recovery: PASS live
+restart: PASS live
+cold boot: PASS live
+post-boot required telemetry: GOOD
+post-boot Rapid history: HTTP 200, 2 series
+PRODUCTION_VALIDATED=false
+```
+
+A release em execução durante o cold boot (`ui4-final-mfa-qr-1540712`) possui o mesmo tree de código do HEAD remoto `d2e741a`, porém o Manifest ainda referencia o commit local equivalente `1540712`. REL-003 só fecha depois de uma release final reconstruída a partir do HEAD documental definitivo e de CI/CodeQL remoto verde.
 
 ## Política de controladoras
 
@@ -217,7 +238,7 @@ GenMon é referência funcional/factual clean-room, não fonte para copiar códi
 | UI-004 | DONE | Capabilities/history, edge cases de quality, responsividade/a11y e superfícies operacionais/admin/engenharia implementadas; validação final pertence a REL-003. |
 | REL-001 | TODO | Confirmar proteção de main. |
 | REL-002 | DONE | Release inclui Gateway, Monitor e frontend; validation/dry-run reproduzíveis. |
-| REL-003 | IN_PROGRESS | Fechar 28/28 software/LAB: gates finais, release candidata, deploy/acceptance/recovery na tes e sincronização Git/GitHub. |
+| REL-003 | IN_PROGRESS | 28/28 software/LAB PASS_TES e tree Git alinhado; falta congelar release final no HEAD documental, CI/CodeQL remoto e governança/merge de main. |
 | VM-CLEAN-001 | NEXT | Criar VM Ubuntu limpa somente depois de REL-003 DONE e 28/28 PASS_TES. |
 | PROD-001 | BLOCKED | Exige SOAK verificado + SEM real + HIL + aprovação. |
 <!-- CHECKLIST_END -->
@@ -225,15 +246,14 @@ GenMon é referência funcional/factual clean-room, não fonte para copiar códi
 ## Próximo passo exato
 
 ```text
-1. executar gates finais locais (Go/frontend/security/contracts);
-2. construir release candidata com SBOM Go + frontend e validar archive;
-3. instalar na tes preservando rollback;
-4. validar Login + senha + MFA + seis roles + Sites;
-5. executar commissioning LAB, Change Commissioning, Histórico/Bindings/Profiles;
-6. executar outage/recovery/reboot e acceptance;
-7. marcar docs/SOFTWARE_LAB_28.md como 28/28 PASS_TES;
-8. commit/push do branch e conferir CI + CodeQL;
-9. somente depois criar VM limpa para prova independente de instalação.
+1. commit/push desta evidência final e alinhar GitHub/local;
+2. executar CI + CodeQL remoto no HEAD final;
+3. construir release final com SBOM a partir do mesmo HEAD e reinstalar na `tes`, preservando `RC_FRONTEND_BIND=0.0.0.0:80`;
+4. repetir acceptance final e confirmar Manifest/Git/GitHub no mesmo commit;
+5. configurar proteção de `main` conforme política e promover o PR de release somente com gates verdes;
+6. marcar REL-003 DONE;
+7. somente então iniciar VM-CLEAN-001 em uma VM Ubuntu limpa para prova independente de instalação;
+8. HIL/SEM/SOAK de campo permanecem gates posteriores antes de `PRODUCTION_VALIDATED=true`.
 ```
 
 `PRODUCTION_VALIDATED=false`. HIL físico, SEM real de campo e produção permanecem gates externos separados.
