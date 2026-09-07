@@ -14,9 +14,9 @@ jobs:
     steps:
       - name: Restore exact Git commit
         env:
-          BUNDLE_URL: https://drop.pensa.ar/f/jSuH9BvYm78pO/rc-frontend-contract-2770d2c.bundle
-          BUNDLE_SHA256: 1116f07bc6e520f7dfde52ac5ede02b903c2c9198198d339d69e2fe3c8f25794
-          TARGET_SHA: 2770d2c69ee7c3d9379d66749a240b855feb4052
+          BUNDLE_URL: https://drop.pensa.ar/f/8X_86lO7aSbMQ/rc-mfa-hotfix-fc9df45.bundle
+          BUNDLE_SHA256: b554b423df8dec259810d841e78b6583cb102b5b4d889bccb7ddcf334d5d4641
+          TARGET_SHA: fc9df4526f5545d3ff168f0f69eaa8407a355a6c
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
