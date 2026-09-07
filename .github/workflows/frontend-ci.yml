@@ -10,19 +10,25 @@ permissions:
 jobs:
   frontend:
     name: Frontend typecheck, test and build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .node-version
+          check-latest: false
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
       - name: Runtime versions
         run: |
           node --version
           npm --version
-      - name: Install exact direct dependencies
+      - name: Install locked dependencies
         working-directory: frontend
-        run: npm install --no-audit --no-fund
+        run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Typecheck
         working-directory: frontend
         run: npm run typecheck
