@@ -32,6 +32,27 @@ if [[ -n "$ENV_SOURCE" ]]; then
   [[ -f "$ENV_SOURCE" ]] || { echo "ERRO: arquivo de ambiente ausente: $ENV_SOURCE" >&2; exit 2; }
 fi
 
+for cmd in python3; do command -v "$cmd" >/dev/null 2>&1 || { echo "ERRO: comando obrigatório ausente: $cmd" >&2; exit 69; }; done
+
+# A configuração instalada é movida para /etc. Caminhos relativos que eram válidos
+# junto do arquivo fonte mudariam de significado após a cópia. Recuse-os antes de
+# alterar o serviço em vez de instalar uma configuração que só falha no restart.
+python3 - "$CONFIG_SOURCE" <<'PY'
+import json
+import os
+import sys
+
+path = sys.argv[1]
+with open(path, encoding="utf-8") as f:
+    cfg = json.load(f)
+if cfg.get("provider") == "rapid-web":
+    for i, gen in enumerate(cfg.get("generators") or []):
+        for key in ("profileDir", "rapidBinding"):
+            value = gen.get(key)
+            if value and not os.path.isabs(value):
+                raise SystemExit(f"ERRO: generators[{i}].{key} deve ser absoluto para instalação em /etc: {value}")
+PY
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PKG_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 MONITOR_BIN="$PKG_ROOT/bin/rc-monitor"
@@ -57,13 +78,32 @@ if ! id rc-monitor >/dev/null 2>&1; then
   useradd --system --gid rc-monitor --home-dir /nonexistent --shell /usr/sbin/nologin rc-monitor
 fi
 
-config_candidate="$(mktemp /etc/.rc-monitor-config.XXXXXX)"
-cleanup(){ rm -f "$config_candidate"; }
+backup_dir="$(mktemp -d /var/lib/.rc-monitor-install.XXXXXX)"
+cleanup(){ rm -rf "$backup_dir"; }
 trap cleanup EXIT
+had_config=0; had_env=0; had_unit=0
+[[ -f "$CONFIG_TARGET" ]] && { cp --preserve=mode,ownership,timestamps "$CONFIG_TARGET" "$backup_dir/config"; had_config=1; }
+[[ -f "$ENV_TARGET" ]] && { cp --preserve=mode,ownership,timestamps "$ENV_TARGET" "$backup_dir/env"; had_env=1; }
+[[ -f "$UNIT_TARGET" ]] && { cp --preserve=mode,ownership,timestamps "$UNIT_TARGET" "$backup_dir/unit"; had_unit=1; }
+
+rollback(){
+  echo "ERRO: nova configuração do RC Monitor não ficou ready; restaurando estado anterior." >&2
+  if [[ $had_config -eq 1 ]]; then cp --preserve=mode,ownership,timestamps "$backup_dir/config" "$CONFIG_TARGET"; else rm -f "$CONFIG_TARGET"; fi
+  if [[ $had_env -eq 1 ]]; then cp --preserve=mode,ownership,timestamps "$backup_dir/env" "$ENV_TARGET"; else rm -f "$ENV_TARGET"; fi
+  if [[ $had_unit -eq 1 ]]; then cp --preserve=mode,ownership,timestamps "$backup_dir/unit" "$UNIT_TARGET"; else rm -f "$UNIT_TARGET"; fi
+  systemctl daemon-reload || true
+  if [[ $had_config -eq 1 && $had_unit -eq 1 ]]; then
+    systemctl restart "$SERVICE" || true
+  else
+    systemctl stop "$SERVICE" || true
+  fi
+}
+trap rollback ERR
+
+config_candidate="$(mktemp /etc/.rc-monitor-config.XXXXXX)"
 install -o root -g rc-monitor -m 0640 "$CONFIG_SOURCE" "$config_candidate"
 "$ROOT/current/bin/rc-monitor" --check-config --config "$config_candidate"
 mv -f "$config_candidate" "$CONFIG_TARGET"
-trap - EXIT
 
 if [[ -n "$ENV_SOURCE" ]]; then
   install -o root -g root -m 0600 "$ENV_SOURCE" "$ENV_TARGET"
@@ -86,9 +126,9 @@ for ((i=1; i<=HEALTH_ATTEMPTS; i++)); do
 done
 
 if [[ $healthy -ne 1 ]]; then
-  echo "ERRO: rc-monitor não ficou ready em $HEALTH_URL" >&2
   systemctl --no-pager --full status "$SERVICE" >&2 || true
-  exit 1
+  false
 fi
 
+trap - ERR
 echo "INSTALL RC MONITOR OK: config=$CONFIG_TARGET health=$HEALTH_URL"
