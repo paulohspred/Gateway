@@ -3,8 +3,8 @@
 <!-- PROJECT_STATE_SCHEMA: 2 -->
 <!-- CANONICAL_HANDOFF: true -->
 <!-- CURRENT_CODE_BRANCH: feature/frontend-contract -->
-<!-- CURRENT_DEVELOPMENT_TASK: UI-003 -->
-<!-- EXTERNAL_RUNNING_GATE: SOAK-001 -->
+<!-- CURRENT_DEVELOPMENT_TASK: UI-004 -->
+<!-- EXTERNAL_RUNNING_GATE: none -->
 <!-- PRODUCTION_VALIDATED: false -->
 <!-- PR2_MUST_REMAIN_DRAFT: true -->
 
@@ -24,21 +24,21 @@ campo -> RC GATEWAY (transporte)
       -> FRONTEND
 ```
 
-Regras: Gateway não contém register maps; RC Monitor recebe canais Rapid, nunca endereços Modbus físicos; zero real permanece zero; dado indefinido permanece ausente; nenhuma escrita industrial nesta fase.
+Regras: Gateway não contém register maps físicos; RC Monitor recebe canais Rapid, nunca endereços Modbus físicos; zero real permanece zero; dado indefinido permanece ausente; nenhuma escrita industrial nesta fase.
 
 ## Continuidade / branches
 
 - `hardening/standalone-10x` -> PR #2 -> `main`: deve permanecer draft/not-merged.
-- `feature/monitor-core` -> PR #3 -> `hardening/standalone-10x`: deve permanecer draft.
-- `feature/frontend-contract` deriva de `feature/monitor-core` e contém a especificação/implementação do frontend; não mesclar em `main` diretamente.
-- não alterar `main` nem mesclar PR #2/#3 sem ordem explícita do proprietário;
-- PR #4 (`feature/frontend-contract` -> `feature/monitor-core`) deve permanecer draft durante UI-003/UI-004;
-- `tmp-backend-finish` é somente branch de montagem/correção para fast-forward do PR #3;
-- não tocar na VM durante `SOAK-001`.
+- `feature/monitor-core` -> PR #3 -> `hardening/standalone-10x`: deve permanecer draft/not-merged.
+- `feature/frontend-contract` -> PR #4 -> `feature/monitor-core`: deve permanecer draft durante UI-004.
+- não alterar `main` nem mesclar PR #2/#3/#4 sem ordem explícita do proprietário.
+- `tmp-backend-finish` permanece branch temporária de montagem/correção.
 
-Rapid baseline: **6.4.7**, source analisado `1fd36080c7830303f921672fdaee335a06e7ae50`.
+Rapid baseline: **6.4.7**. `PRODUCTION_VALIDATED=false`.
 
-## SOAK-001
+## SOAK-001 — relatório ainda não verificado
+
+Janela registrada anteriormente:
 
 ```text
 inicio: 2026-09-05T23:47:29Z
@@ -47,65 +47,11 @@ duração: 86400 s
 fim esperado: 2026-09-06T23:47:29Z
 ```
 
-Para DONE: `result=PASS` e todos os contadores `bad_*`, restart/session-id changes e counter regressions iguais a zero; depois repetir production preflight non-root com `DISRUPTIVE=0`.
+O fim esperado já passou, mas o relatório real não foi verificado nesta sessão. Portanto `SOAK-001` não pode ser tratado como PASS nem como gate atualmente em execução. A VM original permanece intocada até localizar e validar o relatório real. Para DONE: `result=PASS`, todos os `bad_*`, restart/session-id changes e counter regressions iguais a zero; depois repetir production preflight non-root com `DISRUPTIVE=0`.
 
-## Política de controladoras
+## Backend / segurança
 
-GenMon é referência funcional/factual GPLv2, não fonte para copiar código/JSON ao repositório proprietário. `controllers/DRAFT_PROFILES.json` contém vocabulário RC clean-room para ComAp, DSE, SmartGen, MEBAY, Kohler, Basler, PowerZone, Briggs e Generac, todos `draft` e read-only. Endereços/FC/encoding reais ficam no Rapid SCADA e só são promovidos com documentação permitida e/ou HIL.
-
-## Backend aprovado
-
-```text
-MON-001 DONE  fd73a495...  Gateway CI #122 / CodeQL #49 SUCCESS
-MON-002 DONE  9bc9689c...  Gateway CI #126 / CodeQL #53 SUCCESS
-MON-003 DONE  46f50c2b...  Gateway CI #128 / CodeQL #55 SUCCESS
-MON-004 DONE  b509a382...  Gateway CI #131 / CodeQL #58 SUCCESS
-
-MON-005 DONE + MON-006 DONE
-  HEAD: 67a0776565410e2513f44bab98185f774607c6ed
-  Gateway CI #144: SUCCESS
-  CodeQL #71: SUCCESS
-
-MON-007 DONE (software)
-  HEAD: b49d287cdad630abbd10461d10632d936d679096
-  Gateway CI #146: SUCCESS
-  CodeQL #73: SUCCESS
-  RC Monitor Rapid outage and recovery: SUCCESS
-  RC Monitor process restart lifecycle, 20 ciclos: SUCCESS
-```
-
-MON-005 inclui Rapid Web API, semântica de métricas/alarmes/eventos, E2E, outage/recovery e mini-soak. MON-006 inclui config estrita, secrets por env, observabilidade local, systemd non-root, installer e release reprodutível. MON-007 prova lifecycle do binário real, graceful SIGTERM/restart, recovery Rapid e mini-soak em software.
-
-A validação systemd/VM do `rc-monitor` permanece externa e só pode começar depois de `SOAK-001` liberar o host.
-
-## HARD-001 — DONE
-
-Hardening non-root do `scadacomm6` foi codificado no installer e validado no mesmo HEAD de código:
-
-```text
-HEAD: 540ae8a60f331a57a86c5eb7429c14e27d08f4fd
-Gateway CI #148: SUCCESS
-CodeQL #75: SUCCESS
-Gateway and Rapid SCADA stack installer contract: SUCCESS
-Reproducible release build: SUCCESS
-Validate release archive and installer dry-run: SUCCESS
-```
-
-Implementação:
-
-- usuário/grupo de sistema dedicado `scadacomm`, criado de forma idempotente;
-- drop-in de `scadacomm6.service` com `User=scadacomm`, `Group=scadacomm`, `NoNewPrivileges=true`, `PrivateTmp=true`, `ProtectHome=true`, capability sets vazios e `UMask=0027`;
-- árvore `/opt/scada` permanece sob ownership do pacote/root; o installer não executa `chown -R /opt/scada`;
-- `ScadaInstanceConfig.xml` usa `/var/log/scada` como raiz de logs;
-- somente `/var/log/scada/ScadaComm/Log` recebe escrita pelo usuário dedicado;
-- após restart, o installer verifica serviço ativo, usuário efetivo `scadacomm`, leitura do worker/config e escrita no diretório de log;
-- o teste de contrato exige as diretivas de hardening e rejeita ownership recursivo da árvore Rapid.
-
-Base técnica Rapid 6.4.7: `CommDirs` exige `Lang`, `Log` e `Drv`; `Manager` carrega `ScadaInstanceConfig.xml` e aplica `LogDir`; a documentação Linux upstream define `/var/log/scada` para logs. Não foi identificada necessidade de tornar `/opt/scada` gravável pelo Communicator.
-
-A validação prática da nova automação no host real será repetida somente após `SOAK-001`; o comportamento non-root equivalente já foi comprovado manualmente em VM em `VM-006`/`VM-007`.
-
-## API read-only
+Backend read-only permanece software-completo para o escopo atual. API:
 
 ```text
 GET /healthz
@@ -119,66 +65,98 @@ GET /api/v1/generators/{id}/alarms
 GET /api/v1/generators/{id}/events
 ```
 
-## Frontend — primeira vertical validada
+Rapid Web usa Auth API habilitada e Command API obrigatoriamente desabilitada. `scadacomm6` executa non-root como `scadacomm`; `/opt/scada` permanece root-owned; somente o diretório dedicado de log é gravável pelo usuário do Communicator.
 
-A primeira implementação real está em `feature/frontend-contract` sobre a API read-only existente.
+## UI-003 — DONE em deployment LAB reproduzível
 
-```text
-frontend/
-  React + TypeScript + Vite
-  TanStack Query
-  Zod
-  Lucide
-
-rotas:
-  /
-  /generators
-  /generators/:id
-  /alarms
-  /events
-  /communication
-```
-
-Características:
-
-- shell industrial dark responsivo;
-- Visão Geral e frota por telemetria real;
-- lista de geradores;
-- Detalhe do Gerador seguindo `docs/GENERATOR_DETAIL_CONTRACT.md`;
-- sinótico sem inferir MCB/GCB/ATS/rede ausentes;
-- Motor/ECU, elétrica, combustível, bateria/DC, alarmes, eventos e detalhes de quality;
-- zero real permanece zero; ausência permanece `N/D`; `bad` não é exibido como valor confiável;
-- sem START/STOP/RESET/TEST/TRANSFER/setpoints/acknowledge;
-- polling/cache centralizados via TanStack Query;
-- agregação de frota usa concorrência limitada no cliente enquanto não existe endpoint agregado;
-- `capabilities/profile` read-only continua gap conhecido para distinguir `unsupported` de ausência transitória.
-
-Gates próprios:
+Material validado antes deste handoff:
 
 ```text
-.github/workflows/frontend-ci.yml
-.github/workflows/codeql-frontend.yml
+material HEAD: fe51b610d7a6c39f52e09838d6d2fdf263ccaafd
+branch: feature/frontend-contract
+Rapid SCADA: 6.4.7-1
+Node: 22.23.2
+npm: 10.9.8
+Go: 1.27.1
+release instalada na VM LAB: fix5-fe51b61
 ```
 
-Evidência da implementação validada:
+Correções descobertas por instalação limpa e agora codificadas:
+
+- caminho correto `/opt/scada/Config/ScadaInstanceConfig.xml` para Rapid SCADA 6.4.7;
+- `rc-monitor` preservado como executável no release instalado;
+- frontend incluído no artifact canônico e servido a partir de `/opt/rc-gateway/current/frontend`;
+- `frontend/package-lock.json`, `npm ci` e Node exato pinado por `.node-version`/CI;
+- Rapid Web API configurada por script com `AllowAuthApi=true` e `AllowCommandApi=false`;
+- installer do RC Monitor exige paths absolutos para instalação em `/etc` e faz rollback para configuração known-good se o health gate falhar;
+- installer do frontend/Nginx com backup, `nginx -t`, restart, health gate e rollback;
+- acceptance de SPA, deep links, API read-only, 405, cache, headers e listener isolation;
+- `install-rc-lab-stack.sh` orquestra stack-base -> Rapid Auth API -> Monitor -> frontend -> acceptance;
+- LAB exige sidecar SHA-256 do pacote Rapid e registra o hash efetivamente instalado;
+- release validator deixou de usar pipelines `tar | grep -q` sujeitos a SIGPIPE/141;
+- binding demo é explicitamente `SIMULATION_TEST_ONLY`; alarme é `SIMULATED_DIGITAL_ALARM`; o stock demo não arquiva eventos, portanto o binding LAB não inventa evento.
+
+Evidência na segunda VM `tes`:
 
 ```text
-material frontend fix: d6867dc342b4097edec9fa37409690767f11b51a
-validated descendant HEAD: 98b25986f0c30e56073819e8761b5765633b1df4
-Frontend CI #3: SUCCESS
-  typecheck: SUCCESS
-  unit tests: SUCCESS
-  production build: SUCCESS
-CodeQL Frontend #3: SUCCESS
-CodeQL Go #79: SUCCESS
-Gateway CI #152: SUCCESS
-  quality/unit/race/config: SUCCESS
-  stress/leak: SUCCESS
-  impairment/mini-soak: SUCCESS
-  security/reproducibility/release: SUCCESS
+release archive validation: PASS
+application installer contract: PASS
+go test ./...: PASS
+frontend npm ci: PASS
+frontend typecheck: PASS
+frontend tests: 5/5 PASS
+frontend production build: PASS
+full LAB orchestrator: PASS
+rc-gateway: active
+rc-monitor rapid-web: active/healthy
+scadaagent6/scadaserver6/scadacomm6/scadaweb6: active
+nginx: active
+rc-scada-internal-firewall: active
+Rapid Web outage -> Monitor offline/503: PASS
+Rapid Web recovery -> Monitor healthy/good: PASS
+RC Monitor restart recovery: PASS
+RC Monitor failed-provider rollback: PASS
+SPA top-level + deep-link refresh: PASS
+POST read-only endpoint -> 405: PASS
+static cache + HTTP security headers: PASS
+10000/10002 loopback allowed and LAN blocked: PASS
+zero defined -> value=0 quality=good: PASS
+undefined channel -> metric absent, not zero: PASS
+SIMULATED_DIGITAL_ALARM raise: PASS
+SIMULATED_DIGITAL_ALARM clear: PASS
+/events on stock Rapid demo: [] by design; no fake history inserted
 ```
 
-`UI-002` está concluído em software. Isso não significa deployment/produção; `UI-003`, `UI-004`, SEM/HIL e os gates externos continuam pendentes.
+Final LAB state records:
+
+```text
+mode=SIMULATION_TEST_ONLY
+rapid_provider=rapid-web
+rapid_commands=false
+physical_controller=false
+production_validated=false
+```
+
+Isso fecha serving/deployment reproduzível do frontend e a vertical Rapid -> RC Monitor -> frontend em ambiente simulado. Não fecha SEM real, HIL ou produção.
+
+## Frontend / UI-004
+
+Rotas atuais:
+
+```text
+/
+/generators
+/generators/:id
+/alarms
+/events
+/communication
+```
+
+Sem START/STOP/RESET/TEST/TRANSFER/setpoints/acknowledge. `good/stale/offline/bad/unknown`, ausência e zero seguem o contrato. `capabilities/profile` read-only continua gap conhecido para distinguir `unsupported` de ausência transitória e pertence ao trabalho seguinte de HMI adaptativa/edge cases.
+
+## Política de controladoras
+
+GenMon é referência funcional/factual clean-room, não fonte para copiar código/JSON. `controllers/DRAFT_PROFILES.json` contém vocabulário RC; endereços/FC/encoding reais permanecem no Rapid SCADA e só são promovidos com documentação permitida e/ou HIL. Primeira homologação de controladora real continua read-only.
 
 ## Checklist canônico
 
@@ -195,38 +173,37 @@ Gateway CI #152: SUCCESS
 | VM-005 | DONE | Cold boot. |
 | VM-006 | DONE | ScadaComm non-root. |
 | VM-007 | DONE | Cold boot pós-non-root. |
-| HARD-001 | DONE | Installer ScadaComm non-root least-privilege; CI #148 + CodeQL #75. |
-| SOAK-001 | IN_PROGRESS | Soak 24 h da VM. |
-| SEM-001 | TODO | Binding semântico com canais Rapid reais. |
+| HARD-001 | DONE | Installer ScadaComm non-root least-privilege. |
+| SOAK-001 | TODO | Janela terminou; localizar e verificar relatório real antes de tocar a VM original. |
+| SEM-001 | TODO | Binding semântico com canais Rapid reais, não demo. |
 | MON-001 | DONE | Foundation. |
 | MON-002 | DONE | API read-only. |
 | MON-003 | DONE | Profiles. |
 | MON-004 | DONE | RapidScadaProvider. |
-| MON-005 | DONE | Rapid Web + semântica + E2E; CI #144 + CodeQL #71. |
-| MON-006 | DONE | Hardening/release/observabilidade; CI #144 + CodeQL #71. |
-| MON-007 | DONE | Restart/recovery/mini-soak software; CI #146 + CodeQL #73. |
-| HIL-001 | BLOCKED | Primeira controladora real read-only. |
-| HIL-002 | BLOCKED | Modem/VPN/meio físico. |
-| CMD-001 | DEFERRED | Writes só após HIL/interlocks/auditoria. |
-| UI-001 | DONE | Contratos de produto, superfícies, commissioning, ECU e Detalhe do Gerador congelados; implementação real autorizada. |
-| UI-002 | DONE | Shell + primeira vertical real; Frontend CI #3, CodeQL Frontend #3, CodeQL #79 e Gateway CI #152 SUCCESS. |
-| UI-003 | IN_PROGRESS | Consolidar telas/API real, capability/profile read-only e integração de produção. |
-| UI-004 | NEXT | Testes frontend ampliados, regressão responsiva/visual e edge cases. |
+| MON-005 | DONE | Rapid Web + semântica + E2E software. |
+| MON-006 | DONE | Hardening/release/observabilidade. |
+| MON-007 | DONE | Restart/recovery/mini-soak software. |
+| HIL-001 | BLOCKED | Primeira controladora real read-only; depende de hardware. |
+| HIL-002 | BLOCKED | Modem/VPN/meio físico; depende de hardware/meio. |
+| CMD-001 | DEFERRED | Writes somente após HIL/interlocks/autorização/auditoria. |
+| UI-001 | DONE | Contratos de produto/HMI/commissioning congelados. |
+| UI-002 | DONE | Shell + primeira vertical frontend real. |
+| UI-003 | DONE | Release/frontend/Nginx/orquestrador LAB reproduzível e E2E Rapid -> Monitor -> frontend validado em VM limpa. |
+| UI-004 | NEXT | Ampliar edge cases, regressão responsiva/visual e capability/profile read-only. |
 | REL-001 | TODO | Confirmar proteção de main. |
-| REL-002 | DONE | Release inclui rc-monitor e passou gate reprodutível/dry-run. |
-| PROD-001 | BLOCKED | Exige SEM + HIL + soak + aprovação. |
+| REL-002 | DONE | Release inclui Gateway, Monitor e frontend; validation/dry-run reproduzíveis. |
+| PROD-001 | BLOCKED | Exige SOAK verificado + SEM real + HIL + aprovação. |
 <!-- CHECKLIST_END -->
 
 ## Próximo passo exato
 
 ```text
-1. manter a VM intocada enquanto SOAK-001 estiver em execução;
-2. UI-003 está ativo: consolidar integração read-only, serving/deployment do frontend e capability/profile para HMI adaptativa;
-3. endurecer supply chain frontend (lockfile + runtime de Node pinado) antes de release final;
-4. UI-004 é NEXT: ampliar testes de qualidade/ausência/outage e regressão responsiva;
-5. após SOAK-001, verificar o relatório real antes de qualquer toque no host e então executar preflight non-disruptive;
-6. executar SEM-001 com canais Rapid reais;
-7. HIL-001/HIL-002 continuam bloqueados até hardware/meio físico disponível e aprovado.
+1. deixar CI/CodeQL do HEAD deste handoff totalmente verde;
+2. iniciar UI-004: edge cases, responsividade/visual e capability/profile read-only;
+3. localizar e validar o relatório real de SOAK-001 antes de qualquer toque na VM original;
+4. executar SEM-001 com canais Rapid reais quando a configuração real estiver disponível;
+5. HIL-001/HIL-002 continuam bloqueados até hardware/meio físico disponível;
+6. CMD-001 permanece DEFERRED e PROD-001 permanece BLOCKED.
 ```
 
 `PRODUCTION_VALIDATED=false`.
