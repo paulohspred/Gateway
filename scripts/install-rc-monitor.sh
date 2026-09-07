@@ -11,24 +11,39 @@ HEALTH_ATTEMPTS="${RC_MONITOR_HEALTH_ATTEMPTS:-30}"
 HEALTH_DELAY="${RC_MONITOR_HEALTH_DELAY_SECONDS:-1}"
 
 usage(){
-  echo "Uso: $0 [--dry-run] CONFIG.json [ENV_FILE]" >&2
-  exit 64
+  cat <<'EOF'
+Uso:
+  install-rc-monitor.sh [--dry-run] CONFIG.json [ENV_FILE]
+
+Opções:
+  --dry-run   Valida binário/configuração sem alterar o sistema.
+  -h, --help  Mostra esta ajuda e encerra com sucesso.
+
+CONFIG.json deve usar caminhos absolutos para profileDir/rapidBinding quando
+provider=rapid-web, pois a configuração instalada é movida para /etc.
+EOF
+  exit "${1:-64}"
 }
 
 DRY_RUN=0
-if [[ "${1:-}" == "--dry-run" ]]; then
-  DRY_RUN=1
-  shift
-fi
-[[ $# -ge 1 && $# -le 2 ]] || usage
+case "${1:-}" in
+  -h|--help)
+    usage 0
+    ;;
+  --dry-run)
+    DRY_RUN=1
+    shift
+    ;;
+esac
+[[ $# -ge 1 && $# -le 2 ]] || usage 64
 [[ "$HEALTH_ATTEMPTS" =~ ^[0-9]+$ ]] && (( HEALTH_ATTEMPTS >= 1 && HEALTH_ATTEMPTS <= 300 )) || { echo "ERRO: RC_MONITOR_HEALTH_ATTEMPTS deve ser 1..300." >&2; exit 64; }
 [[ "$HEALTH_DELAY" =~ ^[0-9]+$ ]] && (( HEALTH_DELAY >= 1 && HEALTH_DELAY <= 60 )) || { echo "ERRO: RC_MONITOR_HEALTH_DELAY_SECONDS deve ser 1..60." >&2; exit 64; }
 
-CONFIG_SOURCE="$(realpath "$1")"
+CONFIG_SOURCE="$(realpath -- "$1")"
 ENV_SOURCE="${2:-}"
 [[ -f "$CONFIG_SOURCE" ]] || { echo "ERRO: configuração ausente: $CONFIG_SOURCE" >&2; exit 2; }
 if [[ -n "$ENV_SOURCE" ]]; then
-  ENV_SOURCE="$(realpath "$ENV_SOURCE")"
+  ENV_SOURCE="$(realpath -- "$ENV_SOURCE")"
   [[ -f "$ENV_SOURCE" ]] || { echo "ERRO: arquivo de ambiente ausente: $ENV_SOURCE" >&2; exit 2; }
 fi
 
