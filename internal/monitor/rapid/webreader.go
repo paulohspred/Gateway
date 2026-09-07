@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"net/http/cookiejar"
@@ -151,6 +152,43 @@ func (r *WebReader) ReadRecentEvents(ctx context.Context, query EventQuery) ([]R
 	return events, err
 }
 
+func (r *WebReader) ReadHistorical(ctx context.Context, channels []int, query HistoricalQuery) ([]HistoricalPoint, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	channelNumbers, err := normalizeChannelNumbers(channels)
+	if err != nil {
+		return nil, err
+	}
+	if len(channelNumbers) == 0 {
+		return []HistoricalPoint{}, nil
+	}
+	if query.ArchiveBit < 1 || query.ArchiveBit > 3 {
+		return nil, errors.New("rapid historical archiveBit must be 1, 2 or 3")
+	}
+	if query.Start.IsZero() || query.End.IsZero() || !query.End.After(query.Start) {
+		return nil, errors.New("rapid historical range is invalid")
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err := r.ensureLoginLocked(ctx); err != nil {
+		return nil, err
+	}
+	data, status, err := r.getHistoricalLocked(ctx, channelNumbers, query)
+	if err == nil {
+		return data, nil
+	}
+	if status != http.StatusUnauthorized && status != http.StatusForbidden {
+		return nil, err
+	}
+	r.authenticated = false
+	if err := r.ensureLoginLocked(ctx); err != nil {
+		return nil, err
+	}
+	data, _, err = r.getHistoricalLocked(ctx, channelNumbers, query)
+	return data, err
+}
+
 func (r *WebReader) Health(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -268,6 +306,94 @@ func (r *WebReader) getCurrentLocked(ctx context.Context, channels []int) ([]Cha
 	return data, response.StatusCode, nil
 }
 
+func (r *WebReader) getHistoricalLocked(ctx context.Context, channels []int, query HistoricalQuery) ([]HistoricalPoint, int, error) {
+	endpoint := r.resolve("Api/Main/GetHistData")
+	values := endpoint.Query()
+	values.Set("archiveBit", strconv.Itoa(query.ArchiveBit))
+	values.Set("startTime", query.Start.UTC().Format(time.RFC3339))
+	values.Set("endTime", query.End.UTC().Format(time.RFC3339))
+	values.Set("endInclusive", "true")
+	channelValues := make([]string, len(channels))
+	for i, channel := range channels {
+		channelValues[i] = strconv.Itoa(channel)
+	}
+	values.Set("cnlNums", strings.Join(channelValues, ","))
+	endpoint.RawQuery = values.Encode()
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
+	if err != nil {
+		return nil, 0, fmt.Errorf("create rapid historical request: %w", err)
+	}
+	request.Header.Set("Accept", "application/json")
+	response, err := r.client.Do(request)
+	if err != nil {
+		return nil, 0, fmt.Errorf("rapid historical request: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return nil, response.StatusCode, fmt.Errorf("rapid historical request returned HTTP %d", response.StatusCode)
+	}
+	var dto rapidDTO[rapidHistData]
+	if err := decodeRapidJSON(response.Body, &dto); err != nil {
+		return nil, response.StatusCode, fmt.Errorf("decode rapid historical response: %w", err)
+	}
+	if !dto.OK {
+		msg := strings.TrimSpace(dto.Message)
+		if msg == "" {
+			msg = "request rejected"
+		}
+		return nil, response.StatusCode, fmt.Errorf("rapid historical request failed: %s", msg)
+	}
+	if len(dto.Data.ChannelNumbers) != len(dto.Data.Trends) {
+		return nil, response.StatusCode, errors.New("rapid historical response has mismatched channels/trends")
+	}
+	timestamps := make([]time.Time, len(dto.Data.Timestamps))
+	for i, t := range dto.Data.Timestamps {
+		parsed, err := parseRapidHistoryTime(t)
+		if err != nil {
+			return nil, response.StatusCode, fmt.Errorf("rapid historical timestamp[%d]: %w", i, err)
+		}
+		timestamps[i] = parsed
+	}
+	requested := map[int]struct{}{}
+	for _, c := range channels {
+		requested[c] = struct{}{}
+	}
+	out := make([]HistoricalPoint, 0)
+	seen := map[int]struct{}{}
+	for idx, channel := range dto.Data.ChannelNumbers {
+		if _, ok := requested[channel]; !ok {
+			return nil, response.StatusCode, fmt.Errorf("rapid historical response returned unexpected channel %d", channel)
+		}
+		if _, ok := seen[channel]; ok {
+			return nil, response.StatusCode, fmt.Errorf("rapid historical response returned duplicate channel %d", channel)
+		}
+		seen[channel] = struct{}{}
+		records := dto.Data.Trends[idx]
+		if len(records) != len(timestamps) {
+			return nil, response.StatusCode, fmt.Errorf("rapid historical channel %d point count mismatch", channel)
+		}
+		for i, record := range records {
+			if math.IsNaN(record.Data.Value) || math.IsInf(record.Data.Value, 0) {
+				return nil, response.StatusCode, fmt.Errorf("rapid historical channel %d non-finite value", channel)
+			}
+			out = append(out, HistoricalPoint{ChannelNumber: channel, Timestamp: timestamps[i], Value: record.Data.Value, Status: record.Data.Status})
+		}
+	}
+	return out, response.StatusCode, nil
+}
+
+func parseRapidHistoryTime(value rapidTimeRecord) (time.Time, error) {
+	if strings.TrimSpace(value.UTC) != "" {
+		if parsed, err := time.Parse(time.RFC3339Nano, value.UTC); err == nil {
+			return parsed.UTC(), nil
+		}
+	}
+	if value.Milliseconds != 0 {
+		return time.UnixMilli(value.Milliseconds).UTC(), nil
+	}
+	return time.Time{}, errors.New("timestamp is missing")
+}
+
 func (r *WebReader) getRecentEventsLocked(ctx context.Context, query EventQuery) ([]RawEvent, int, error) {
 	endpoint := r.resolve("Api/Main/GetLastAvailableEvents")
 	values := endpoint.Query()
@@ -356,6 +482,24 @@ type rapidCurrentPoint struct {
 	ChannelNumber int     `json:"cnlNum"`
 	Value         float64 `json:"val"`
 	Status        int     `json:"stat"`
+}
+
+type rapidHistData struct {
+	ChannelNumbers []int               `json:"cnlNums"`
+	Timestamps     []rapidTimeRecord   `json:"timestamps"`
+	Trends         [][]rapidHistRecord `json:"trends"`
+}
+type rapidTimeRecord struct {
+	Milliseconds int64  `json:"ms"`
+	UTC          string `json:"ut"`
+	Local        string `json:"lt"`
+}
+type rapidHistRecord struct {
+	Data rapidCnlData `json:"d"`
+}
+type rapidCnlData struct {
+	Value  float64 `json:"val"`
+	Status int     `json:"stat"`
 }
 
 type rapidEventPacket struct {

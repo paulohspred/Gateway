@@ -37,6 +37,7 @@ func (d ChannelData) Defined() bool {
 // uses Rapid SCADA's supported client libraries.
 type Reader interface {
 	ReadCurrent(context.Context, []int) ([]ChannelData, error)
+	ReadHistorical(context.Context, []int, HistoricalQuery) ([]HistoricalPoint, error)
 	ReadAlarms(context.Context, string) ([]monitor.Alarm, error)
 	ReadEvents(context.Context, string) ([]monitor.Event, error)
 	Health(context.Context) error
@@ -231,6 +232,94 @@ func (p *Provider) GetEvents(ctx context.Context, id string) ([]monitor.Event, e
 		}
 	}
 	return events, nil
+}
+
+func (p *Provider) GetHistory(ctx context.Context, id string, query monitor.HistoryQuery) (monitor.HistorySnapshot, error) {
+	if err := contextErr(ctx); err != nil {
+		return monitor.HistorySnapshot{}, err
+	}
+	if err := query.Validate(); err != nil {
+		return monitor.HistorySnapshot{}, err
+	}
+	cfg, ok := p.generators[id]
+	if !ok {
+		return monitor.HistorySnapshot{}, monitor.GeneratorNotFound(id)
+	}
+	bindings := make(map[monitor.MetricKey]ChannelBinding, len(cfg.Binding.Metrics))
+	for _, binding := range cfg.Binding.Metrics {
+		bindings[binding.Key] = binding
+	}
+	definitions := metricDefinitions(cfg.Profile)
+	channels := make([]int, 0, len(query.MetricKeys))
+	for _, key := range query.MetricKeys {
+		binding, ok := bindings[key]
+		if !ok {
+			return monitor.HistorySnapshot{}, fmt.Errorf("metric %q is unsupported by generator profile", key)
+		}
+		def := definitions[key]
+		if def.Kind != monitor.ValueNumber {
+			return monitor.HistorySnapshot{}, fmt.Errorf("history metric %q must be numeric", key)
+		}
+		channels = append(channels, binding.ChannelNumber)
+	}
+	historical, ok := p.reader.(interface {
+		ReadHistorical(context.Context, []int, HistoricalQuery) ([]HistoricalPoint, error)
+	})
+	if !ok {
+		return monitor.HistorySnapshot{}, monitor.ErrHistoryUnavailable
+	}
+	points, err := historical.ReadHistorical(ctx, channels, HistoricalQuery{ArchiveBit: query.ArchiveBit, Start: query.Start, End: query.End})
+	if err != nil {
+		return monitor.HistorySnapshot{}, fmt.Errorf("%w: %v", monitor.ErrHistoryUnavailable, err)
+	}
+	byChannel := make(map[int][]HistoricalPoint)
+	for _, point := range points {
+		byChannel[point.ChannelNumber] = append(byChannel[point.ChannelNumber], point)
+	}
+	series := make([]monitor.HistorySeries, 0, len(query.MetricKeys))
+	for _, key := range query.MetricKeys {
+		binding := bindings[key]
+		def := definitions[key]
+		out := monitor.HistorySeries{MetricKey: key, Unit: def.Unit, Points: []monitor.HistoryPoint{}}
+		for _, point := range byChannel[binding.ChannelNumber] {
+			if point.Status <= 0 {
+				continue
+			}
+			value, err := binding.Transform.Apply(point.Value, def.Kind)
+			if err != nil {
+				return monitor.HistorySnapshot{}, fmt.Errorf("history metric %q: %w", key, err)
+			}
+			if value.Number == nil {
+				return monitor.HistorySnapshot{}, fmt.Errorf("history metric %q transform is not numeric", key)
+			}
+			out.Points = append(out.Points, monitor.HistoryPoint{Timestamp: point.Timestamp.UTC(), Value: *value.Number, Quality: monitor.QualityGood})
+		}
+		series = append(series, out)
+	}
+	return monitor.HistorySnapshot{GeneratorID: id, Start: query.Start.UTC(), End: query.End.UTC(), ArchiveBit: query.ArchiveBit, Series: series}, nil
+}
+
+func (p *Provider) GetCapabilities(ctx context.Context, id string) (monitor.GeneratorCapabilities, error) {
+	if err := contextErr(ctx); err != nil {
+		return monitor.GeneratorCapabilities{}, err
+	}
+	cfg, ok := p.generators[id]
+	if !ok {
+		return monitor.GeneratorCapabilities{}, monitor.GeneratorNotFound(id)
+	}
+	metrics := make([]monitor.MetricCapability, 0, len(cfg.Profile.Telemetry.Metrics))
+	for _, def := range cfg.Profile.Telemetry.Metrics {
+		metrics = append(metrics, monitor.MetricCapability{
+			Key: def.Key, DisplayName: def.DisplayName, Kind: def.Kind, Unit: def.Unit,
+			Required: def.Required, StaleAfterSeconds: def.StaleAfterSeconds,
+		})
+	}
+	caps := cfg.Profile.Manifest.Capabilities
+	return monitor.GeneratorCapabilities{
+		GeneratorID: id, ProfileID: cfg.Profile.Manifest.ID, ProfileStatus: string(cfg.Profile.Manifest.Status),
+		Telemetry: caps.Telemetry, Alarms: caps.Alarms, Events: caps.Events, Maintenance: caps.Maintenance,
+		RemoteControl: false, Metrics: metrics,
+	}, nil
 }
 
 func (p *Provider) Health(ctx context.Context) (monitor.ProviderHealth, error) {

@@ -42,9 +42,23 @@ type RawEvent struct {
 	OccurredAt     time.Time
 }
 
+type HistoricalQuery struct {
+	ArchiveBit int
+	Start      time.Time
+	End        time.Time
+}
+
+type HistoricalPoint struct {
+	ChannelNumber int
+	Timestamp     time.Time
+	Value         float64
+	Status        int
+}
+
 type RawReader interface {
 	ReadCurrent(context.Context, []int) ([]ChannelData, error)
 	ReadRecentEvents(context.Context, EventQuery) ([]RawEvent, error)
+	ReadHistorical(context.Context, []int, HistoricalQuery) ([]HistoricalPoint, error)
 	Health(context.Context) error
 }
 
@@ -100,6 +114,10 @@ func NewSemanticReader(raw RawReader, configs []GeneratorConfig, options Semanti
 
 func (r *SemanticReader) ReadCurrent(ctx context.Context, channels []int) ([]ChannelData, error) {
 	return r.raw.ReadCurrent(ctx, channels)
+}
+
+func (r *SemanticReader) ReadHistorical(ctx context.Context, channels []int, query HistoricalQuery) ([]HistoricalPoint, error) {
+	return r.raw.ReadHistorical(ctx, channels, query)
 }
 
 func (r *SemanticReader) ReadAlarms(ctx context.Context, generatorID string) ([]monitor.Alarm, error) {

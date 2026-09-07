@@ -17,6 +17,8 @@ type Provider interface {
 	GetTelemetry(context.Context, string) (TelemetrySnapshot, error)
 	GetAlarms(context.Context, string) ([]Alarm, error)
 	GetEvents(context.Context, string) ([]Event, error)
+	GetCapabilities(context.Context, string) (GeneratorCapabilities, error)
+	GetHistory(context.Context, string, HistoryQuery) (HistorySnapshot, error)
 	Health(context.Context) (ProviderHealth, error)
 }
 

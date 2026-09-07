@@ -107,6 +107,31 @@ func (s *Service) GetEvents(ctx context.Context, id string) ([]Event, error) {
 	return events, nil
 }
 
+func (s *Service) GetCapabilities(ctx context.Context, id string) (GeneratorCapabilities, error) {
+	capabilities, err := s.provider.GetCapabilities(ctx, id)
+	if err != nil {
+		return GeneratorCapabilities{}, err
+	}
+	if capabilities.GeneratorID != id {
+		return GeneratorCapabilities{}, fmt.Errorf("provider returned capabilities for generator %q instead of %q", capabilities.GeneratorID, id)
+	}
+	return capabilities, nil
+}
+
+func (s *Service) GetHistory(ctx context.Context, id string, query HistoryQuery) (HistorySnapshot, error) {
+	if err := query.Validate(); err != nil {
+		return HistorySnapshot{}, err
+	}
+	history, err := s.provider.GetHistory(ctx, id, query)
+	if err != nil {
+		return HistorySnapshot{}, err
+	}
+	if history.GeneratorID != id {
+		return HistorySnapshot{}, fmt.Errorf("provider returned history for generator %q instead of %q", history.GeneratorID, id)
+	}
+	return history, nil
+}
+
 func (s *Service) Health(ctx context.Context) (ProviderHealth, error) {
 	health, err := s.provider.Health(ctx)
 	if err != nil {

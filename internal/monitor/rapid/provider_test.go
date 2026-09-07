@@ -21,6 +21,13 @@ type stubReader struct {
 	events    []monitor.Event
 }
 
+func (r *stubReader) ReadHistorical(ctx context.Context, _ []int, _ HistoricalQuery) ([]HistoricalPoint, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return nil, nil
+}
+
 func (r *stubReader) ReadCurrent(ctx context.Context, _ []int) ([]ChannelData, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err

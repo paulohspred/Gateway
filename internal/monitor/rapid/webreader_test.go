@@ -153,3 +153,36 @@ func writeRapidTestJSON(t *testing.T, w http.ResponseWriter, value any) {
 		t.Errorf("encode response: %v", err)
 	}
 }
+
+func TestWebReaderReadsHistoricalData(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/Api/Auth/Login":
+			http.SetCookie(w, &http.Cookie{Name: "session", Value: "ok", Path: "/"})
+			writeRapidTestJSON(t, w, map[string]any{"ok": true, "msg": ""})
+		case "/Api/Main/GetHistData":
+			if r.URL.Query().Get("cnlNums") != "101" || r.URL.Query().Get("archiveBit") != "1" {
+				t.Errorf("unexpected history query: %s", r.URL.RawQuery)
+			}
+			writeRapidTestJSON(t, w, map[string]any{
+				"ok": true, "msg": "",
+				"data": map[string]any{
+					"cnlNums":    []int{101},
+					"timestamps": []map[string]any{{"ut": "2026-09-06T10:00:00Z"}, {"ut": "2026-09-06T10:01:00Z"}},
+					"trends":     []any{[]any{map[string]any{"d": map[string]any{"val": 1500.0, "stat": 1}}, map[string]any{"d": map[string]any{"val": 1510.0, "stat": 1}}}},
+				},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	reader := newTestWebReader(t, server.URL)
+	points, err := reader.ReadHistorical(context.Background(), []int{101}, HistoricalQuery{ArchiveBit: 1, Start: time.Date(2026, 9, 6, 10, 0, 0, 0, time.UTC), End: time.Date(2026, 9, 6, 10, 1, 0, 0, time.UTC)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(points) != 2 || points[0].ChannelNumber != 101 || points[0].Value != 1500 || points[1].Value != 1510 {
+		t.Fatalf("unexpected historical points: %#v", points)
+	}
+}

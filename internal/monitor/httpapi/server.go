@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -200,6 +201,29 @@ func (s *Server) handleGeneratorResource(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		writeJSON(w, http.StatusOK, alarms)
+	case "history":
+		query, err := parseHistoryQuery(r)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_history_query", err.Error())
+			return
+		}
+		history, err := s.service.GetHistory(r.Context(), id, query)
+		if err != nil {
+			if errors.Is(err, monitor.ErrHistoryUnavailable) {
+				writeError(w, http.StatusNotImplemented, "history_unavailable", "historical archive is unavailable for this generator")
+				return
+			}
+			writeServiceError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, history)
+	case "capabilities":
+		capabilities, err := s.service.GetCapabilities(r.Context(), id)
+		if err != nil {
+			writeServiceError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, capabilities)
 	case "events":
 		events, err := s.service.GetEvents(r.Context(), id)
 		if err != nil {
@@ -210,6 +234,43 @@ func (s *Server) handleGeneratorResource(w http.ResponseWriter, r *http.Request)
 	default:
 		s.handleNotFound(w, r)
 	}
+}
+
+func parseHistoryQuery(r *http.Request) (monitor.HistoryQuery, error) {
+	values := r.URL.Query()
+	rawMetrics := strings.TrimSpace(values.Get("metrics"))
+	if rawMetrics == "" {
+		return monitor.HistoryQuery{}, errors.New("metrics query parameter is required")
+	}
+	parts := strings.Split(rawMetrics, ",")
+	keys := make([]monitor.MetricKey, 0, len(parts))
+	for _, part := range parts {
+		key := monitor.MetricKey(strings.TrimSpace(part))
+		if key == "" {
+			return monitor.HistoryQuery{}, errors.New("metrics contains an empty key")
+		}
+		keys = append(keys, key)
+	}
+	start, err := time.Parse(time.RFC3339, values.Get("start"))
+	if err != nil {
+		return monitor.HistoryQuery{}, errors.New("start must be RFC3339")
+	}
+	end, err := time.Parse(time.RFC3339, values.Get("end"))
+	if err != nil {
+		return monitor.HistoryQuery{}, errors.New("end must be RFC3339")
+	}
+	archiveBit := 1
+	if raw := strings.TrimSpace(values.Get("archiveBit")); raw != "" {
+		archiveBit, err = strconv.Atoi(raw)
+		if err != nil {
+			return monitor.HistoryQuery{}, errors.New("archiveBit must be an integer")
+		}
+	}
+	query := monitor.HistoryQuery{MetricKeys: keys, Start: start.UTC(), End: end.UTC(), ArchiveBit: archiveBit}
+	if err := query.Validate(); err != nil {
+		return monitor.HistoryQuery{}, err
+	}
+	return query, nil
 }
 
 func (s *Server) handleNotFound(w http.ResponseWriter, _ *http.Request) {

@@ -295,3 +295,32 @@ type generatorErrorProvider struct {
 func (p generatorErrorProvider) GetGenerator(context.Context, string) (monitor.Generator, error) {
 	return monitor.Generator{}, p.err
 }
+
+func TestCapabilitiesAndHistoryContracts(t *testing.T) {
+	server := newTestServer(t, newFakeProvider())
+
+	recorder := httptest.NewRecorder()
+	server.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/generators/gen-sim-001/capabilities", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("capabilities expected 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var caps monitor.GeneratorCapabilities
+	if err := json.Unmarshal(recorder.Body.Bytes(), &caps); err != nil {
+		t.Fatal(err)
+	}
+	if caps.GeneratorID != "gen-sim-001" || !caps.Telemetry || caps.RemoteControl {
+		t.Fatalf("unexpected capabilities: %+v", caps)
+	}
+	if len(caps.Metrics) == 0 {
+		t.Fatal("capabilities metrics missing")
+	}
+
+	recorder = httptest.NewRecorder()
+	server.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/generators/gen-sim-001/history", nil))
+	assertError(t, recorder, http.StatusBadRequest, "invalid_history_query")
+
+	path := "/api/v1/generators/gen-sim-001/history?metrics=engine.rpm&start=2026-09-06T09:30:00Z&end=2026-09-06T10:30:00Z&archiveBit=1"
+	recorder = httptest.NewRecorder()
+	server.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
+	assertError(t, recorder, http.StatusNotImplemented, "history_unavailable")
+}

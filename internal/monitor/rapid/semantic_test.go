@@ -17,6 +17,13 @@ type stubRawReader struct {
 	healthErr  error
 }
 
+func (r *stubRawReader) ReadHistorical(ctx context.Context, _ []int, _ HistoricalQuery) ([]HistoricalPoint, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return nil, nil
+}
+
 func (r *stubRawReader) ReadCurrent(ctx context.Context, _ []int) ([]ChannelData, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err

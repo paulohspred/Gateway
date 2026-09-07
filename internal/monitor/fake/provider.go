@@ -213,6 +213,53 @@ func (p *Provider) GetEvents(ctx context.Context, id string) ([]monitor.Event, e
 	}, nil
 }
 
+func (p *Provider) GetHistory(ctx context.Context, id string, query monitor.HistoryQuery) (monitor.HistorySnapshot, error) {
+	if err := contextErr(ctx); err != nil {
+		return monitor.HistorySnapshot{}, err
+	}
+	p.mu.RLock()
+	generator := p.generator
+	p.mu.RUnlock()
+	if id != generator.ID {
+		return monitor.HistorySnapshot{}, monitor.GeneratorNotFound(id)
+	}
+	return monitor.HistorySnapshot{}, monitor.ErrHistoryUnavailable
+}
+
+func (p *Provider) GetCapabilities(ctx context.Context, id string) (monitor.GeneratorCapabilities, error) {
+	if err := contextErr(ctx); err != nil {
+		return monitor.GeneratorCapabilities{}, err
+	}
+	p.mu.RLock()
+	generator := p.generator
+	p.mu.RUnlock()
+	if id != generator.ID {
+		return monitor.GeneratorCapabilities{}, monitor.GeneratorNotFound(id)
+	}
+	metric := func(key monitor.MetricKey, name string, kind monitor.ValueKind, unit string, required bool) monitor.MetricCapability {
+		return monitor.MetricCapability{Key: key, DisplayName: name, Kind: kind, Unit: unit, Required: required, StaleAfterSeconds: 30}
+	}
+	return monitor.GeneratorCapabilities{
+		GeneratorID: id, ProfileID: "rc-simulator.reference-controller", ProfileStatus: "synthetic",
+		Telemetry: true, Alarms: true, Events: true, Maintenance: false, RemoteControl: false,
+		Metrics: []monitor.MetricCapability{
+			metric(monitor.MetricEngineRPM, "Engine RPM", monitor.ValueNumber, "rpm", true),
+			metric(monitor.MetricEngineOilPressure, "Oil pressure", monitor.ValueNumber, "bar", true),
+			metric(monitor.MetricEngineCoolantTemp, "Coolant temperature", monitor.ValueNumber, "C", true),
+			metric(monitor.MetricGeneratorVoltageL1, "Generator L1-N", monitor.ValueNumber, "V", true),
+			metric(monitor.MetricGeneratorVoltageL2, "Generator L2-N", monitor.ValueNumber, "V", false),
+			metric(monitor.MetricGeneratorVoltageL3, "Generator L3-N", monitor.ValueNumber, "V", false),
+			metric(monitor.MetricGeneratorFrequency, "Generator frequency", monitor.ValueNumber, "Hz", true),
+			metric(monitor.MetricGeneratorPowerKW, "Active power", monitor.ValueNumber, "kW", true),
+			metric(monitor.MetricGeneratorPowerFactor, "Power factor", monitor.ValueNumber, "", false),
+			metric(monitor.MetricBatteryVoltage, "Battery voltage", monitor.ValueNumber, "V", true),
+			metric(monitor.MetricControllerMode, "Controller mode", monitor.ValueText, "", true),
+			metric(monitor.MetricBreakerGCB, "Generator breaker", monitor.ValueBoolean, "", false),
+			metric(monitor.MetricFuelLevel, "Fuel level", monitor.ValueNumber, "%", false),
+		},
+	}, nil
+}
+
 func (p *Provider) Health(ctx context.Context) (monitor.ProviderHealth, error) {
 	if err := contextErr(ctx); err != nil {
 		return monitor.ProviderHealth{}, err
