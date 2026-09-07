@@ -4,19 +4,15 @@ import { metricView } from "../lib/metric";
 import { formatDateTime } from "../lib/time";
 import { StatusBadge } from "./StatusBadge";
 
-function alarmTone(row: FleetRow) {
-  if (row.alarms.some((alarm) => alarm.active && alarm.severity === "critical")) return "critical";
-  if (row.alarms.some((alarm) => alarm.active && alarm.severity === "warning")) return "warning";
-  return "none";
+function text(row: FleetRow, key: string, digits = 1, booleanLabels?: readonly [string,string]) { const v = metricView(row.telemetry, key, { digits, ...(booleanLabels ? { booleanLabels } : {}) }); return !v.present || ["N/D","Dado inválido"].includes(v.display) ? v.display : `${v.display}${v.unit ? ` ${v.unit}` : ""}`; }
+const columns = ["Gerador","Status","Modo","RPM","Hz","kW","PF","BAT","Óleo","Coolant","Combustível","Horas","MCB","GCB","G L1-N","G L2-N","G L3-N","G L1-L2","Captura",""];
+
+function MobileRow({ row }: { row: FleetRow }) {
+  const alarms = row.alarms.filter(a => a.active);
+  const details = [["Modo",text(row,"controller.mode")],["RPM",text(row,"engine.rpm",0)],["Frequência",text(row,"generator.frequency",1)],["Potência",text(row,"generator.power_kw",0)],["PF",text(row,"generator.power_factor",2)],["Bateria",text(row,"battery.voltage",1)],["Pressão óleo",text(row,"engine.oil_pressure",1)],["Coolant",text(row,"engine.coolant_temperature",1)],["Combustível",text(row,"fuel.level",0)],["Run Hours",text(row,"engine.run_hours",1)],["MCB",text(row,"breaker.mcb",0,["FECHADO","ABERTO"])],["GCB",text(row,"breaker.gcb",0,["FECHADO","ABERTO"])]] as const;
+  return <article className="fleet-mobile-row"><header><div><h3>{row.generator.name}</h3><p>{row.generator.id} · {row.generator.controller.model} · {row.generator.siteId}</p></div><StatusBadge tone={row.telemetry?.communication ?? "unknown"}>{(row.telemetry?.communication ?? "unknown").toUpperCase()}</StatusBadge></header><dl>{details.map(([label,value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>{alarms.length ? <p className="fleet-mobile-alarm">{alarms.length} alarme(s) ativo(s)</p> : null}<Link to={`/generators/${encodeURIComponent(row.generator.id)}`}>Abrir gerador ↗</Link></article>;
 }
 
 export function FleetTable({ rows }: { rows: FleetRow[] }) {
-  return <div className="table-wrap"><table className="data-table"><thead><tr><th>Gerador</th><th>Site</th><th>Controladora</th><th>Comunicação</th><th>RPM</th><th>kW</th><th>Hz</th><th>Alarmes</th><th>Captura</th></tr></thead><tbody>{rows.map((row) => {
-    const rpm = metricView(row.telemetry, "engine.rpm", { digits: 0 });
-    const kw = metricView(row.telemetry, "generator.power_kw", { digits: 1 });
-    const hz = metricView(row.telemetry, "generator.frequency", { digits: 1 });
-    const activeAlarms = row.alarms.filter((alarm) => alarm.active);
-    const tone = alarmTone(row);
-    return <tr key={row.generator.id}><td><Link className="asset-link" to={`/generators/${encodeURIComponent(row.generator.id)}`}><strong>{row.generator.name}</strong><span>{row.generator.id}</span></Link></td><td>{row.generator.siteId}</td><td>{row.generator.controller.manufacturer} {row.generator.controller.model}</td><td><StatusBadge tone={row.telemetry?.communication ?? "unknown"}>{(row.telemetry?.communication ?? "unknown").toUpperCase()}</StatusBadge></td><td>{rpm.display}{rpm.unit ? ` ${rpm.unit}` : ""}</td><td>{kw.display}{kw.unit ? ` ${kw.unit}` : ""}</td><td>{hz.display}{hz.unit ? ` ${hz.unit}` : ""}</td><td>{tone === "none" ? <span className="muted">0</span> : <StatusBadge tone={tone}>{activeAlarms.length}</StatusBadge>}</td><td>{formatDateTime(row.telemetry?.capturedAt)}</td></tr>;
-  })}</tbody></table></div>;
+  return <><div className="fleet-mobile-list">{rows.map(row => <MobileRow row={row} key={row.generator.id}/>)}</div><div className="table-wrap fleet-desktop-table"><table className="data-table fleet-list-table"><thead><tr>{columns.map((c,i) => <th key={`${c}-${i}`}>{c}</th>)}</tr></thead><tbody>{rows.map(row => { const alarms = row.alarms.filter(a=>a.active); return <tr key={row.generator.id}><td><div className="asset-link"><strong>{row.generator.name}</strong><span>{row.generator.id} · {row.generator.controller.model} · {row.generator.siteId}</span></div></td><td><div className="fleet-status-stack"><StatusBadge tone={row.telemetry?.communication ?? "unknown"}>{(row.telemetry?.communication ?? "unknown").toUpperCase()}</StatusBadge>{alarms.length ? <StatusBadge tone={alarms.some(a=>a.severity==="critical")?"critical":"warning"}>{alarms.length}</StatusBadge>:null}</div></td><td>{text(row,"controller.mode")}</td><td>{text(row,"engine.rpm",0)}</td><td>{text(row,"generator.frequency",1)}</td><td><b>{text(row,"generator.power_kw",0)}</b></td><td>{text(row,"generator.power_factor",2)}</td><td>{text(row,"battery.voltage",1)}</td><td>{text(row,"engine.oil_pressure",1)}</td><td>{text(row,"engine.coolant_temperature",1)}</td><td>{text(row,"fuel.level",0)}</td><td>{text(row,"engine.run_hours",1)}</td><td>{text(row,"breaker.mcb",0,["FECHADO","ABERTO"])}</td><td>{text(row,"breaker.gcb",0,["FECHADO","ABERTO"])}</td><td>{text(row,"generator.voltage_l1",0)}</td><td>{text(row,"generator.voltage_l2",0)}</td><td>{text(row,"generator.voltage_l3",0)}</td><td>{text(row,"generator.voltage_l1_l2",0)}</td><td>{formatDateTime(row.telemetry?.capturedAt)}</td><td><Link className="fleet-open-link" to={`/generators/${encodeURIComponent(row.generator.id)}`}>Abrir ↗</Link></td></tr>; })}</tbody></table></div></>;
 }
