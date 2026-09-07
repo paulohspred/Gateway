@@ -24,7 +24,7 @@ if [[ -n "$unformatted" ]]; then
 fi
 
 go mod verify
-check_optional_tool actionlint .github/workflows/ci.yml .github/workflows/codeql.yml .github/workflows/release-attest.yml
+check_optional_tool actionlint .github/workflows/*.yml
 go vet ./...
 check_optional_tool staticcheck ./...
 go test ./... -shuffle=on -count=1 -coverprofile=coverage.out
@@ -37,11 +37,33 @@ go build -trimpath ./cmd/rc-monitor
 for cfg in configs/*.json; do
   ./rc-gateway --check-config --config "$cfg"
 done
+
+# Most monitor configs are source-tree portable. The LAB deployment config is
+# intentionally rooted at /opt/rc-gateway/current so that moving it to /etc does
+# not break profile/binding resolution. In CI, validate that same config against
+# the checkout by translating only the canonical installed prefix to this repo.
+repo_root="$(pwd)"
+tmp_monitor_cfg="$(mktemp)"
+cleanup(){ rm -f "$tmp_monitor_cfg" rc-gateway rc-monitor coverage.out; }
+trap cleanup EXIT
 for cfg in configs/monitor/*.json; do
-  ./rc-monitor --check-config --config "$cfg"
+  if grep -Fq '/opt/rc-gateway/current/' "$cfg"; then
+    python3 - "$cfg" "$tmp_monitor_cfg" "$repo_root" <<'PY'
+from pathlib import Path
+import sys
+src, dst, root = sys.argv[1:]
+text = Path(src).read_text(encoding="utf-8")
+text = text.replace("/opt/rc-gateway/current", root)
+Path(dst).write_text(text, encoding="utf-8")
+PY
+    ./rc-monitor --check-config --config "$tmp_monitor_cfg"
+  else
+    ./rc-monitor --check-config --config "$cfg"
+  fi
 done
 
 bash -n scripts/*.sh
 
-rm -f rc-gateway rc-monitor coverage.out
+trap - EXIT
+cleanup
 echo "Gateway + RC Monitor CI local OK"
