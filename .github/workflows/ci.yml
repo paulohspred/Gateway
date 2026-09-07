@@ -158,6 +158,8 @@ jobs:
         run: "$RUNNER_TEMP/gobin/govulncheck" ./...
       - name: Shell syntax
         run: bash -n scripts/*.sh
+      - name: Application installer contract
+        run: bash scripts/test-application-installer-contract.sh
       - name: Installer archive security tests
         run: bash scripts/test-installer-security.sh
       - name: Reproducible release build
@@ -174,6 +176,7 @@ jobs:
             cmp "$a.sha256" "$b.sha256"
           done
           cmp dist-a/install-scada-stack.sh dist-b/install-scada-stack.sh
+          cmp dist-a/install-rc-lab-stack.sh dist-b/install-rc-lab-stack.sh
           cmp dist-a/rc-gateway.safe.json dist-b/rc-gateway.safe.json
           cmp dist-a/SCADA_STACK_INSTALLER.md dist-b/SCADA_STACK_INSTALLER.md
       - name: Gateway and Rapid SCADA stack installer contract
@@ -185,54 +188,11 @@ jobs:
         run: |
           VERSION="ci-${GITHUB_SHA}"
           archive="dist-a/rc-gateway_${VERSION}_linux_amd64.tar.gz"
-          bash scripts/install-release.sh --dry-run "$archive" "$archive.sha256" configs/gateway.example.json
+          bash scripts/validate-release-archive.sh "$archive" "$archive.sha256" configs/gateway.example.json
           test -x dist-a/install-scada-stack.sh
+          test -x dist-a/install-rc-lab-stack.sh
           test -f dist-a/rc-gateway.safe.json
           test -f dist-a/SCADA_STACK_INSTALLER.md
-          tar -tzf "$archive" | grep -q '/sbom.cdx.json$'
-          tar -tzf "$archive" | grep -q '/bin/rc-monitor$'
-          tar -tzf "$archive" | grep -q '/frontend/index.html$'
-          tar -tzf "$archive" | grep -Eq '/frontend/assets/index-[A-Za-z0-9_-]+\.js$'
-          tar -tzf "$archive" | grep -q '/systemd/rc-gateway.service$'
-          tar -tzf "$archive" | grep -q '/systemd/rc-monitor.service$'
-          tar -tzf "$archive" | grep -q '/scripts/install-rc-monitor.sh$'
-          tar -tzf "$archive" | grep -q '/scripts/install-rc-frontend.sh$'
-          tar -tzf "$archive" | grep -q '/scripts/configure-rapid-web-api.sh$'
-          tar -tzf "$archive" | grep -q '/scripts/rc-frontend-acceptance.sh$'
-          tar -tzf "$archive" | grep -q '/scripts/rollback-release.sh$'
-          tar -tzf "$archive" | grep -q '/scripts/probe-usb-hid.sh$'
-          tar -tzf "$archive" | grep -q '/scripts/collect-diagnostics.sh$'
-          tar -tzf "$archive" | grep -q '/scripts/vm-acceptance.sh$'
-          tar -tzf "$archive" | grep -q '/scripts/rapid-scada-acceptance.sh$'
-          tar -tzf "$archive" | grep -q '/scripts/rapid-scada-production-acceptance.sh$'
-          tar -tzf "$archive" | grep -q '/scripts/install-scada-stack.sh$'
-          tar -tzf "$archive" | grep -q '/docs/USB_HID_COMAP.md$'
-          tar -tzf "$archive" | grep -q '/docs/RUNBOOK.md$'
-          tar -tzf "$archive" | grep -q '/docs/COMPATIBILITY_MATRIX.md$'
-          tar -tzf "$archive" | grep -q '/docs/RAPID_SCADA_INTEGRATION.md$'
-          tar -tzf "$archive" | grep -q '/docs/GENERATOR_SCADA_PRODUCTION_READINESS.md$'
-          tar -tzf "$archive" | grep -q '/docs/SCADA_STACK_INSTALLER.md$'
-          tar -tzf "$archive" | grep -q '/docs/VM_ACCEPTANCE.md$'
-          tar -tzf "$archive" | grep -q '/docs/THREAT_MODEL.md$'
-          tar -tzf "$archive" | grep -q '/docs/CONFIGURATION_COMPATIBILITY.md$'
-          tar -tzf "$archive" | grep -q '/configs/rapid-scada.modbus-tcp.example.json$'
-          tar -tzf "$archive" | grep -q '/configs/rapid-scada.rtu-over-tcp.example.json$'
-          tar -tzf "$archive" | grep -q '/configs/rapid-scada.rs485-multidrop.example.json$'
-          tar -tzf "$archive" | grep -q '/configs/scada-stack.safe.example.json$'
-          tar -tzf "$archive" | grep -q '/configs/monitor/rc-monitor.rapid-demo-lab.json$'
-          tar -tzf "$archive" | grep -q '/controllers/rc-simulator/reference-controller/rapid/channels.rapid-demo-lab.json$'
-          tar -tzf "$archive" | grep -q '/README.md$'
-          tar -tzf "$archive" | grep -q '/LICENSE$'
-          tar -tzf "$archive" | grep -q '/NOTICE$'
-          tar -tzf "$archive" | grep -q '/THIRD_PARTY_NOTICES.md$'
-          tar -xOzf "$archive" --wildcards '*/MANIFEST' | grep -qx 'product=rc-gateway'
-          tar -xOzf "$archive" --wildcards '*/MANIFEST' | grep -qx 'component=rc-monitor'
-          tar -xOzf "$archive" --wildcards '*/MANIFEST' | grep -qx 'component=rc-monitor-frontend'
-          tar -xOzf "$archive" --wildcards '*/MANIFEST' | grep -qx 'license=Proprietary-All-Rights-Reserved'
-          if tar -tzf "$archive" | grep -q 'rc-gateway-umbrella'; then
-            echo "legacy umbrella branding leaked into canonical release" >&2
-            exit 1
-          fi
       - name: Upload release candidates
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
