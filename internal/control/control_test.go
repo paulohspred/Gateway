@@ -130,6 +130,17 @@ func TestMFAEnrollmentAndLogin(t *testing.T) {
 	if secret == "" {
 		t.Fatal("secret missing")
 	}
+	w = request(t, s, http.MethodPost, "/api/v1/auth/mfa/setup", nil, cookie, csrf)
+	if w.Code != 200 {
+		t.Fatalf("repeat setup=%d %s", w.Code, w.Body.String())
+	}
+	var repeated map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &repeated); err != nil {
+		t.Fatal(err)
+	}
+	if repeated["secret"] != secret {
+		t.Fatalf("repeated setup rotated pending secret: first=%q repeated=%q", secret, repeated["secret"])
+	}
 	code := TOTPCode(secret, time.Now().UTC())
 	w = request(t, s, http.MethodPost, "/api/v1/auth/mfa/enable", map[string]string{"code": code}, cookie, csrf)
 	if w.Code != 200 {

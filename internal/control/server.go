@@ -418,16 +418,27 @@ func (s *Server) mfaSetup(w http.ResponseWriter, r *http.Request, u User, sess S
 		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "only POST is allowed")
 		return
 	}
-	secret, err := NewTOTPSecret()
-	if err != nil {
-		writeError(w, 500, "mfa_setup_failed", "unable to generate MFA secret")
-		return
-	}
 	s.mu.Lock()
 	current := s.sessions[sess.Token]
-	current.PendingMFASecret = secret
-	s.sessions[sess.Token] = current
+	secret := current.PendingMFASecret
 	s.mu.Unlock()
+	if secret == "" {
+		var err error
+		secret, err = NewTOTPSecret()
+		if err != nil {
+			writeError(w, 500, "mfa_setup_failed", "unable to generate MFA secret")
+			return
+		}
+		s.mu.Lock()
+		current = s.sessions[sess.Token]
+		if current.PendingMFASecret == "" {
+			current.PendingMFASecret = secret
+			s.sessions[sess.Token] = current
+		} else {
+			secret = current.PendingMFASecret
+		}
+		s.mu.Unlock()
+	}
 	writeJSON(w, 200, map[string]string{"secret": secret, "otpauthUri": TOTPURI("RC Monitor", u.Username, secret)})
 }
 func (s *Server) mfaEnable(w http.ResponseWriter, r *http.Request, u User, sess Session) {
