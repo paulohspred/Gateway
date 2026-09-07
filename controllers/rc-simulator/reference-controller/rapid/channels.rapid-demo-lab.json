@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "profileId": "rc-simulator.reference-controller",
+  "metrics": [
+    {"key":"engine.rpm","channelNumber":101,"transform":{"kind":"number","scale":500,"offset":1500}},
+    {"key":"engine.oil_pressure","channelNumber":102,"transform":{"kind":"number","scale":5}},
+    {"key":"engine.coolant_temperature","channelNumber":103,"transform":{"kind":"number","scale":2,"offset":82}},
+    {"key":"engine.run_hours","channelNumber":103,"transform":{"kind":"number","scale":10,"offset":1000}},
+    {"key":"generator.voltage_l1","channelNumber":106,"transform":{"kind":"number","scale":2,"offset":220}},
+    {"key":"generator.voltage_l2","channelNumber":107,"transform":{"kind":"number","scale":2,"offset":220}},
+    {"key":"generator.voltage_l3","channelNumber":108,"transform":{"kind":"number","scale":2,"offset":220}},
+    {"key":"generator.frequency","channelNumber":101,"transform":{"kind":"number","scale":0.2,"offset":60}},
+    {"key":"generator.power_kw","channelNumber":103,"transform":{"kind":"number","scale":10,"offset":50}},
+    {"key":"generator.power_factor","channelNumber":102,"transform":{"kind":"number"}},
+    {"key":"battery.voltage","channelNumber":103,"transform":{"kind":"number","scale":0.1,"offset":12}},
+    {"key":"controller.mode","channelNumber":102,"transform":{"kind":"enum","enumValues":{"0":"off","1":"auto"}}},
+    {"key":"breaker.gcb","channelNumber":102,"transform":{"kind":"boolean","trueValues":[1],"falseValues":[0]}},
+    {"key":"fuel.level","channelNumber":103,"transform":{"kind":"number","scale":10}}
+  ],
+  "alarms": [
+    {"code":"SIMULATED_DIGITAL_ALARM","channelNumber":102,"active":{"kind":"equals","value":0}}
+  ],
+  "events": [
+    {"type":"controller.test_event","channelNumber":102,"condition":{"kind":"nonzero"},"message":"Synthetic Rapid SCADA demo transition"}
+  ]
+}
