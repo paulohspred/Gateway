@@ -94,8 +94,8 @@ fi
 
 chown -R root:root "$release_dir"
 find "$release_dir" -type d -exec chmod 0755 {} +
-chmod 0755 "$release_dir/bin/rc-gateway" "$release_dir/scripts/"*.sh 2>/dev/null || true
-find "$release_dir" -type f ! -path '*/bin/rc-gateway' ! -path '*/scripts/*.sh' -exec chmod 0644 {} +
+chmod 0755 "$release_dir/bin/rc-gateway" "$release_dir/bin/rc-monitor" "$release_dir/scripts/"*.sh 2>/dev/null || true
+find "$release_dir" -type f ! -path '*/bin/rc-gateway' ! -path '*/bin/rc-monitor' ! -path '*/scripts/*.sh' -exec chmod 0644 {} +
 
 old_current=""
 if [[ -L "$ROOT/current" ]]; then old_current="$(readlink -f "$ROOT/current" || true)"; fi
