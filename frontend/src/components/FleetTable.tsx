@@ -1,10 +1,10 @@
 import { Link } from "react-router-dom";
-import type { FleetRow } from "../api/fleet";
+import { metricSupported, type FleetRow } from "../api/fleet";
 import { metricView } from "../lib/metric";
 import { formatDateTime } from "../lib/time";
 import { StatusBadge } from "./StatusBadge";
 
-function text(row: FleetRow, key: string, digits = 1, booleanLabels?: readonly [string,string]) { const v = metricView(row.telemetry, key, { digits, ...(booleanLabels ? { booleanLabels } : {}) }); return !v.present || ["N/D","Dado inválido"].includes(v.display) ? v.display : `${v.display}${v.unit ? ` ${v.unit}` : ""}`; }
+function text(row: FleetRow, key: string, digits = 1, booleanLabels?: readonly [string,string]) { const v = metricView(row.telemetry, key, { digits, supported: metricSupported(row, key), ...(booleanLabels ? { booleanLabels } : {}) }); return !v.present || ["N/D","Dado inválido"].includes(v.display) ? v.display : `${v.display}${v.unit ? ` ${v.unit}` : ""}`; }
 const columns = ["Gerador","Status","Modo","RPM","Hz","kW","PF","BAT","Óleo","Coolant","Combustível","Horas","MCB","GCB","G L1-N","G L2-N","G L3-N","G L1-L2","Captura",""];
 
 function MobileRow({ row }: { row: FleetRow }) {

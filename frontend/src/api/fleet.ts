@@ -1,10 +1,11 @@
 import { api } from "./client";
-import type { Alarm, Generator, Telemetry } from "./schemas";
+import type { Alarm, Generator, GeneratorCapabilities, Telemetry } from "./schemas";
 
 export type FleetRow = {
   generator: Generator;
   telemetry: Telemetry | null;
   alarms: Alarm[];
+  capabilities: GeneratorCapabilities | null;
   telemetryError?: string;
   alarmError?: string;
 };
@@ -27,14 +28,16 @@ async function mapLimit<T, R>(items: readonly T[], limit: number, fn: (item: T) 
 export async function getFleetRows(includeAlarms = true): Promise<FleetRow[]> {
   const generators = await api.listGenerators();
   return mapLimit(generators, 8, async (generator) => {
-    const [telemetryResult, alarmResult] = await Promise.allSettled([
+    const [telemetryResult, alarmResult, capabilityResult] = await Promise.allSettled([
       api.getTelemetry(generator.id),
-      includeAlarms ? api.getAlarms(generator.id) : Promise.resolve([] as Alarm[])
+      includeAlarms ? api.getAlarms(generator.id) : Promise.resolve([] as Alarm[]),
+      api.getCapabilities(generator.id)
     ]);
     return {
       generator,
       telemetry: telemetryResult.status === "fulfilled" ? telemetryResult.value : null,
       alarms: alarmResult.status === "fulfilled" ? alarmResult.value : [],
+      capabilities: capabilityResult.status === "fulfilled" ? capabilityResult.value : null,
       ...(telemetryResult.status === "rejected" ? { telemetryError: telemetryResult.reason instanceof Error ? telemetryResult.reason.message : "Falha de telemetria" } : {}),
       ...(alarmResult.status === "rejected" ? { alarmError: alarmResult.reason instanceof Error ? alarmResult.reason.message : "Falha de alarmes" } : {})
     };
@@ -47,4 +50,9 @@ export async function getFleetEvents() {
     try { return await api.getEvents(generator.id); } catch { return []; }
   });
   return batches.flat().sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt));
+}
+
+export function metricSupported(row: FleetRow, key: string): boolean | undefined {
+  if (!row.capabilities) return undefined;
+  return row.capabilities.metrics.some((metric) => metric.key === key);
 }

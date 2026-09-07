@@ -21,3 +21,9 @@ describe("metricView", () => {
     expect(view.quality).toBe("stale");
   });
 });
+
+
+it("profile-unsupported metric is distinct from supported-but-absent", () => {
+  expect(metricView(undefined, "fuel.level", { supported: false })).toMatchObject({ display: "Não suportado", quality: "unsupported", present: false });
+  expect(metricView(undefined, "fuel.level", { supported: true })).toMatchObject({ display: "N/D", quality: "missing", present: false });
+});

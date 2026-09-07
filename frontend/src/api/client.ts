@@ -3,11 +3,15 @@ import {
   eventsSchema,
   generatorSchema,
   generatorsSchema,
+  generatorCapabilitiesSchema,
+  historySnapshotSchema,
   systemHealthSchema,
   telemetrySchema,
   type Alarm,
   type Event,
   type Generator,
+  type GeneratorCapabilities,
+  type HistorySnapshot,
   type SystemHealth,
   type Telemetry
 } from "./schemas";
@@ -48,7 +52,12 @@ export const api = {
   listGenerators: async (): Promise<Generator[]> => generatorsSchema.parse(await getJson("/api/v1/generators")),
   getGenerator: async (id: string): Promise<Generator> => generatorSchema.parse(await getJson(`/api/v1/generators/${encodeURIComponent(id)}`)),
   getTelemetry: async (id: string): Promise<Telemetry> => telemetrySchema.parse(await getJson(`/api/v1/generators/${encodeURIComponent(id)}/telemetry`)),
+  getCapabilities: async (id: string): Promise<GeneratorCapabilities> => generatorCapabilitiesSchema.parse(await getJson(`/api/v1/generators/${encodeURIComponent(id)}/capabilities`)),
   getAlarms: async (id: string): Promise<Alarm[]> => alarmsSchema.parse(await getJson(`/api/v1/generators/${encodeURIComponent(id)}/alarms`)),
   getEvents: async (id: string): Promise<Event[]> => eventsSchema.parse(await getJson(`/api/v1/generators/${encodeURIComponent(id)}/events`)),
+  getHistory: async (id: string, metrics: string[], start: Date, end: Date, archiveBit = 1): Promise<HistorySnapshot> => {
+    const params = new URLSearchParams({ metrics: metrics.join(","), start: start.toISOString(), end: end.toISOString(), archiveBit: String(archiveBit) });
+    return historySnapshotSchema.parse(await getJson(`/api/v1/generators/${encodeURIComponent(id)}/history?${params.toString()}`));
+  },
   getSystemHealth: async (): Promise<SystemHealth> => systemHealthSchema.parse(await getJson("/api/v1/system/health"))
 };

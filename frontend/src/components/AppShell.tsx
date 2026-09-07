@@ -1,14 +1,11 @@
-import { Activity, BellRing, CircuitBoard, Gauge, RadioTower, Zap } from "lucide-react";
-import { NavLink, Outlet } from "react-router-dom";
+import { Activity,BellRing,CircuitBoard,Gauge,RadioTower,ShieldCheck,Users,MapPinned,ClipboardCheck,BookOpenCheck,Stethoscope,ScrollText,ServerCog,LogOut,UserRoundCog,Zap,History,Settings2,Info,Network,UsersRound } from "lucide-react";
+import { NavLink,Outlet } from "react-router-dom";
+import { useAuth } from "../auth/AuthContext";
+type LinkDef={to:string;label:string;icon:typeof Gauge;end?:boolean;permission?:string};
+const operation:LinkDef[]=[{to:"/",label:"Visão Geral",icon:Gauge,end:true},{to:"/generators",label:"Geradores",icon:CircuitBoard},{to:"/alarms",label:"Alarmes",icon:BellRing},{to:"/events",label:"Eventos",icon:Activity},{to:"/history",label:"Histórico",icon:History},{to:"/communication",label:"Comunicação",icon:RadioTower}];
+const engineering:LinkDef[]=[{to:"/engineering/commissioning",label:"Commissioning",icon:ClipboardCheck,permission:"commissioning.read"},{to:"/engineering/profiles",label:"Controladoras / Profiles",icon:BookOpenCheck,permission:"commissioning.read"},{to:"/engineering/bindings",label:"Rapid / Bindings",icon:Network,permission:"commissioning.read"},{to:"/engineering/diagnostics",label:"Diagnóstico",icon:Stethoscope,permission:"diagnostics.read"}];
+const administration:LinkDef[]=[{to:"/admin/users",label:"Usuários",icon:Users,permission:"users.read"},{to:"/admin/roles",label:"Perfis / Permissões",icon:UsersRound,permission:"users.read"},{to:"/admin/sites",label:"Sites",icon:MapPinned,permission:"sites.read"},{to:"/admin/audit",label:"Auditoria",icon:ScrollText,permission:"audit.read"},{to:"/admin/system",label:"Saúde do sistema",icon:ServerCog,permission:"system.read"}];
+const personal:LinkDef[]=[{to:"/settings",label:"Configurações",icon:Settings2},{to:"/about",label:"Sobre / Versões",icon:Info}];
 
-const links = [
-  { to: "/", label: "Visão Geral", icon: Gauge, end: true },
-  { to: "/generators", label: "Geradores", icon: CircuitBoard },
-  { to: "/alarms", label: "Alarmes", icon: BellRing },
-  { to: "/events", label: "Eventos", icon: Activity },
-  { to: "/communication", label: "Comunicação", icon: RadioTower }
-];
-
-export function AppShell() {
-  return <div className="app-shell"><aside className="sidebar"><div className="brand"><Zap aria-hidden="true"/><div><strong>RC MONITOR</strong><span>Supervisão de grupos geradores</span></div></div><nav aria-label="Operação"><p className="nav-label">OPERAÇÃO</p>{links.map(({ to, label, icon: Icon, end }) => <NavLink key={to} to={to} end={end} className={({ isActive }) => isActive ? "nav-link active" : "nav-link"}><Icon aria-hidden="true"/><span>{label}</span></NavLink>)}</nav><div className="sidebar-footer"><span className="readonly-dot"/><div><strong>Somente leitura</strong><span>Comandos industriais bloqueados</span></div></div></aside><main className="main"><Outlet/></main></div>;
-}
+function Group({label,links}:{label:string;links:LinkDef[]}){const auth=useAuth();const visible=links.filter(l=>!l.permission||auth.hasPermission(l.permission));if(!visible.length)return null;return <><p className="nav-label">{label}</p>{visible.map(({to,label,icon:Icon,end})=><NavLink key={to} to={to} end={end} className={({isActive})=>isActive?"nav-link active":"nav-link"}><Icon aria-hidden="true"/><span>{label}</span></NavLink>)}</>}
+export function AppShell(){const auth=useAuth();return <><a className="skip-link" href="#main-content">Pular para o conteúdo</a><div className="app-shell"><aside className="sidebar"><div className="brand"><Zap aria-hidden="true"/><div><strong>RC MONITOR</strong><span>Supervisão de grupos geradores</span></div></div><nav aria-label="Navegação"><Group label="OPERAÇÃO" links={operation}/><Group label="ENGENHARIA" links={engineering}/><Group label="ADMINISTRAÇÃO" links={administration}/><Group label="CONTA" links={personal}/></nav><div className="sidebar-account"><NavLink to="/account/security" className="account-link"><UserRoundCog/><div><strong>{auth.user?.displayName}</strong><span>{auth.user?.role}</span></div></NavLink><button onClick={()=>void auth.logout()} aria-label="Sair"><LogOut/></button></div><div className="sidebar-footer"><span className="readonly-dot"/><div><strong>Operação somente leitura</strong><span>Comandos industriais bloqueados</span></div></div></aside><main className="main" id="main-content" tabIndex={-1}>{auth.user?.mustChangePassword||auth.mfaEnrollmentRequired?<div className="security-banner"><ShieldCheck/><span>Finalize os requisitos de segurança da conta.</span><NavLink to="/account/security">Abrir</NavLink></div>:null}<Outlet/></main></div></>}

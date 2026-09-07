@@ -1,11 +1,11 @@
 import { Link } from "react-router-dom";
-import type { FleetRow } from "../api/fleet";
+import { metricSupported, type FleetRow } from "../api/fleet";
 import { metricOf, metricView } from "../lib/metric";
 import { GeneratorEnergyFlow } from "./GeneratorEnergyFlow";
 import { IconBattery, IconBolt, IconFuelPump, IconHouse, IconOilCan, IconRunHours, IconThermometer } from "./ScadaIcons";
 
 function metricText(row: FleetRow, key: string, digits = 1) {
-  const view = metricView(row.telemetry, key, { digits });
+  const view = metricView(row.telemetry, key, { digits, supported: metricSupported(row, key) });
   if (!view.present || view.display === "N/D" || view.display === "Dado inválido") return view.display;
   return `${view.display}${view.unit ? ` ${view.unit}` : ""}`;
 }
@@ -16,7 +16,7 @@ function EngineRow({ icon, label, value, quality, percent }: { icon: React.React
 }
 
 function PowerGauge({ row }: { row: FleetRow }) {
-  const power = metricView(row.telemetry, "generator.power_kw", { digits: 0 });
+  const power = metricView(row.telemetry, "generator.power_kw", { digits: 0, supported: metricSupported(row, "generator.power_kw") });
   const raw = typeof power.raw === "number" && power.quality === "good" ? power.raw : null;
   const nominal = row.generator.spec?.ratedPowerKw;
   const scaled = raw != null && nominal != null && nominal > 0;
@@ -31,7 +31,7 @@ function PowerGauge({ row }: { row: FleetRow }) {
 
 export function GeneratorVerticalCard({ row }: { row: FleetRow }) {
   const t = row.telemetry;
-  const mode = metricView(t, "controller.mode");
+  const mode = metricView(t, "controller.mode", { supported: metricSupported(row, "controller.mode") });
   const activeAlarms = row.alarms.filter((alarm) => alarm.active);
   const fuel = metricOf(t, "fuel.level");
   const fuelPct = fuel && typeof fuel.value === "number" && fuel.unit === "%" && fuel.quality === "good" ? fuel.value : null;
@@ -55,7 +55,7 @@ export function GeneratorVerticalCard({ row }: { row: FleetRow }) {
     {t?.communication === "offline" ? <div className="operator-last-known">Última leitura conhecida · equipamento offline</div> : null}
     <section className="operator-mode"><span>MODE</span><div className="operator-mode-buttons">{["OFF","MAN","AUTO","TEST"].map((item) => <span key={item} className={mode.display.toUpperCase().startsWith(item) ? "is-active" : ""}>{item}</span>)}</div><strong>{mode.display}</strong></section>
     <section className="operator-flow"><div className="operator-section-heading"><h4>Power Flow</h4><span>READ ONLY</span></div><GeneratorEnergyFlow telemetry={t} compact/></section>
-    <section className="operator-engine"><h4>Engine Status</h4>{engineRows.map((item) => { const view = metricView(t, item.key, { digits: item.digits }); return <EngineRow key={item.key} icon={item.icon} label={item.label} value={metricText(row, item.key, item.digits)} quality={view.quality} percent={item.pct}/>; })}</section>
+    <section className="operator-engine"><h4>Engine Status</h4>{engineRows.map((item) => { const view = metricView(t, item.key, { digits: item.digits, supported: metricSupported(row, item.key) }); return <EngineRow key={item.key} icon={item.icon} label={item.label} value={metricText(row, item.key, item.digits)} quality={view.quality} percent={item.pct}/>; })}</section>
     <section className="operator-gauge"><div className="operator-section-heading"><h4>Generator P</h4><span>POTÊNCIA ATIVA</span></div><PowerGauge row={row}/></section>
     <section className="operator-voltage-table"><h4>Mains / Generator</h4><div className="operator-voltage-head"><span/><span>Mains</span><span>Generator</span></div>{volts.map(([label,mainsKey,genKey]) => <div className="operator-voltage-row" key={label}><span>{label}</span><b>{metricText(row,mainsKey,0)}</b><strong>{metricText(row,genKey,0)}</strong></div>)}</section>
   </article>;

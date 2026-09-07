@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { telemetrySchema } from "./schemas";
+import { generatorCapabilitiesSchema, telemetrySchema } from "./schemas";
 
 describe("telemetry schema", () => {
   it("aceita valores number/text/bool com quality", () => {
@@ -7,4 +7,11 @@ describe("telemetry schema", () => {
     expect(parsed.metrics["generator.power_kw"]?.value).toBe(0);
     expect(parsed.metrics["breaker.gcb"]?.value).toBe(false);
   });
+});
+
+
+it("parses generator capabilities", () => {
+  const parsed = generatorCapabilitiesSchema.parse({generatorId:"gen-1",profileId:"p1",profileStatus:"validated",telemetry:true,alarms:true,events:false,maintenance:false,remoteControl:false,metrics:[{key:"engine.rpm",displayName:"RPM",kind:"number",unit:"rpm",required:true,staleAfterSeconds:30}]});
+  expect(parsed.remoteControl).toBe(false);
+  expect(parsed.metrics[0]?.required).toBe(true);
 });

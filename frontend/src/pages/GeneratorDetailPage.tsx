@@ -8,6 +8,7 @@ import { Panel } from "../components/Panel";
 import { StatusBadge } from "../components/StatusBadge";
 import { Topbar } from "../components/Topbar";
 import { formatDateTime } from "../lib/time";
+import { CONTROLLER_IMAGE_FALLBACK, controllerImageSrc } from "../lib/controllerImage";
 
 const motorMetrics = [
   ["RPM", "engine.rpm", 0], ["Estado", "engine.state", 0], ["Pressão do óleo", "engine.oil_pressure", 1], ["Temperatura do óleo", "engine.oil_temperature", 1],
@@ -25,52 +26,56 @@ export function GeneratorDetailPage() {
   const { id = "" } = useParams();
   const generator = useQuery({ queryKey: ["generator", id], queryFn: () => api.getGenerator(id), enabled: Boolean(id) });
   const telemetry = useQuery({ queryKey: ["telemetry", id], queryFn: () => api.getTelemetry(id), enabled: Boolean(id), refetchInterval: 5_000 });
+  const capabilities = useQuery({ queryKey: ["capabilities", id], queryFn: () => api.getCapabilities(id), enabled: Boolean(id), staleTime: 60_000 });
   const alarms = useQuery({ queryKey: ["alarms", id], queryFn: () => api.getAlarms(id), enabled: Boolean(id), refetchInterval: 10_000 });
   const events = useQuery({ queryKey: ["events", id], queryFn: () => api.getEvents(id), enabled: Boolean(id), refetchInterval: 10_000 });
   const health = useQuery({ queryKey: ["system-health"], queryFn: api.getSystemHealth, refetchInterval: 10_000 });
 
   const g = generator.data;
   const t = telemetry.data;
+  const supportedKeys = new Set(capabilities.data?.metrics.map((metric) => metric.key) ?? []);
+  const supports = (key: string) => capabilities.data ? supportedKeys.has(key) : undefined;
   if (generator.isLoading) return <><Topbar title="Gerador"/><div className="content-grid"><p className="loading">Carregando ativo…</p></div></>;
   if (!g) return <><Topbar title="Gerador não disponível"/><div className="content-grid"><div className="error-banner">{generator.error instanceof Error ? generator.error.message : "Gerador não encontrado"}</div></div></>;
 
   const activeAlarms = (alarms.data ?? []).filter((alarm) => alarm.active);
   return <>
-    <Topbar title={g.name} subtitle={`${g.id} · Site ${g.siteId}`} onRefresh={() => { void telemetry.refetch(); void alarms.refetch(); void events.refetch(); void health.refetch(); }} refreshing={telemetry.isFetching || alarms.isFetching || events.isFetching}>
+    <Topbar title={g.name} subtitle={`${g.id} · Site ${g.siteId}`} onRefresh={() => { void telemetry.refetch(); void capabilities.refetch(); void alarms.refetch(); void events.refetch(); void health.refetch(); }} refreshing={telemetry.isFetching || alarms.isFetching || events.isFetching}>
       <Link className="text-button" to="/generators">← Geradores</Link>
     </Topbar>
     <div className="content-grid detail-page">
+      <section className="detail-controller-hero"><div className="detail-controller-image"><img src={controllerImageSrc(g.controller.model)} alt={`${g.controller.manufacturer} ${g.controller.model}`} onError={(event) => { event.currentTarget.src = CONTROLLER_IMAGE_FALLBACK; }}/></div><div><span>Controladora</span><h2>{g.controller.manufacturer} {g.controller.model}</h2><p>{g.controller.firmware ? `Firmware ${g.controller.firmware}` : "Firmware N/D"} · {capabilities.data?.profileId ?? "Profile N/D"}</p></div><div className="detail-controller-actions"><Link className="text-button" to={`/history?generator=${encodeURIComponent(g.id)}`}>Histórico</Link></div></section>
       <section className="asset-strip">
         <div><span>Controladora</span><strong>{g.controller.manufacturer} {g.controller.model}</strong></div>
         <div><span>Comunicação</span><StatusBadge tone={t?.communication ?? "unknown"}>{(t?.communication ?? "unknown").toUpperCase()}</StatusBadge></div>
-        <div><span>Modo</span><MetricValue telemetry={t} metricKey="controller.mode"/></div>
-        <div><span>Status controlador</span><MetricValue telemetry={t} metricKey="controller.status"/></div>
+        <div><span>Modo</span><MetricValue telemetry={t} metricKey="controller.mode" supported={supports("controller.mode")}/></div>
+        <div><span>Status controlador</span><MetricValue telemetry={t} metricKey="controller.status" supported={supports("controller.status")}/></div>
         <div><span>Snapshot</span><strong>{formatDateTime(t?.capturedAt)}</strong></div>
       </section>
 
       <section className="quality-strip">
         <div><RadioTower/><span>Provider</span><StatusBadge tone={health.data?.provider.status ?? "unavailable"}>{(health.data?.provider.status ?? "unavailable").toUpperCase()}</StatusBadge></div>
-        <div><Info/><span>Qualidade é mostrada por métrica. Ausência permanece N/D e zero real permanece zero.</span></div>
+        <div><Info/><span>Qualidade por métrica: N/D = suportada porém ausente; UNSUPPORTED = fora do profile; zero real permanece zero.</span></div>
       </section>
 
       {t ? <Panel title="Sinótico elétrico"><ElectricalMimic telemetry={t}/></Panel> : <Panel title="Sinótico elétrico"><p className="empty">Telemetria indisponível. Nenhum estado elétrico será inferido.</p></Panel>}
 
       <div className="two-col">
         <Panel title="Motor / ECU">
-          <div className="metric-grid">{motorMetrics.map(([label, key, digits]) => <div className="metric-cell" key={key}><span>{label}</span><MetricValue telemetry={t} metricKey={key} digits={digits}/></div>)}</div>
+          <div className="metric-grid">{motorMetrics.map(([label, key, digits]) => <div className="metric-cell" key={key}><span>{label}</span><MetricValue telemetry={t} metricKey={key} digits={digits} supported={supports(key)}/></div>)}</div>
           <p className="panel-note">ECU/J1939 adicional só aparecerá após MetricKeys e profiles homologados.</p>
         </Panel>
         <Panel title="Elétrica">
-          <div className="metric-grid electrical">{electricalMetrics.map(([label, key]) => <div className="metric-cell" key={key}><span>{label}</span><MetricValue telemetry={t} metricKey={key}/></div>)}</div>
+          <div className="metric-grid electrical">{electricalMetrics.map(([label, key]) => <div className="metric-cell" key={key}><span>{label}</span><MetricValue telemetry={t} metricKey={key} supported={supports(key)}/></div>)}</div>
         </Panel>
       </div>
 
       <div className="two-col">
         <Panel title="Combustível" action={<Fuel/>}>
-          <div className="metric-grid"><div className="metric-cell"><span>Nível</span><MetricValue telemetry={t} metricKey="fuel.level"/></div><div className="metric-cell"><span>Consumo instantâneo</span><MetricValue telemetry={t} metricKey="fuel.consumption_rate"/></div><div className="metric-cell"><span>Consumo total</span><MetricValue telemetry={t} metricKey="fuel.total_consumption"/></div></div>
+          <div className="metric-grid"><div className="metric-cell"><span>Nível</span><MetricValue telemetry={t} metricKey="fuel.level" supported={supports("fuel.level")}/></div><div className="metric-cell"><span>Consumo instantâneo</span><MetricValue telemetry={t} metricKey="fuel.consumption_rate" supported={supports("fuel.consumption_rate")}/></div><div className="metric-cell"><span>Consumo total</span><MetricValue telemetry={t} metricKey="fuel.total_consumption" supported={supports("fuel.total_consumption")}/></div></div>
         </Panel>
         <Panel title="DC / Bateria" action={<BatteryCharging/>}>
-          <div className="metric-grid"><div className="metric-cell"><span>Tensão bateria</span><MetricValue telemetry={t} metricKey="battery.voltage"/></div><div className="metric-cell"><span>Corrente bateria</span><MetricValue telemetry={t} metricKey="battery.current"/></div><div className="metric-cell"><span>Tensão carregador</span><MetricValue telemetry={t} metricKey="battery.charger_voltage"/></div><div className="metric-cell"><span>Corrente carregador</span><MetricValue telemetry={t} metricKey="battery.charger_current"/></div></div>
+          <div className="metric-grid"><div className="metric-cell"><span>Tensão bateria</span><MetricValue telemetry={t} metricKey="battery.voltage" supported={supports("battery.voltage")}/></div><div className="metric-cell"><span>Corrente bateria</span><MetricValue telemetry={t} metricKey="battery.current" supported={supports("battery.current")}/></div><div className="metric-cell"><span>Tensão carregador</span><MetricValue telemetry={t} metricKey="battery.charger_voltage" supported={supports("battery.charger_voltage")}/></div><div className="metric-cell"><span>Corrente carregador</span><MetricValue telemetry={t} metricKey="battery.charger_current" supported={supports("battery.charger_current")}/></div></div>
         </Panel>
       </div>
 
@@ -81,6 +86,8 @@ export function GeneratorDetailPage() {
       <Panel title="Eventos recentes" action={<Activity/>}>
         <div className="table-wrap"><table className="data-table"><thead><tr><th>Hora</th><th>Tipo</th><th>Mensagem</th></tr></thead><tbody>{(events.data ?? []).slice(0, 12).map((event) => <tr key={event.id}><td>{formatDateTime(event.occurredAt)}</td><td>{event.type}</td><td>{event.message}</td></tr>)}</tbody></table></div>
       </Panel>
+
+      <Panel title="Capabilities do profile"><div className="technical-grid"><div><span>Profile</span><strong>{capabilities.data?.profileId ?? "N/D"}</strong></div><div><span>Status</span><strong>{capabilities.data?.profileStatus ?? "N/D"}</strong></div><div><span>Telemetria</span><strong>{capabilities.data?.telemetry ? "SIM" : "NÃO"}</strong></div><div><span>Alarmes</span><strong>{capabilities.data?.alarms ? "SIM" : "NÃO"}</strong></div><div><span>Eventos</span><strong>{capabilities.data?.events ? "SIM" : "NÃO"}</strong></div><div><span>Manutenção</span><strong>{capabilities.data?.maintenance ? "SIM" : "NÃO"}</strong></div><div><span>Controle remoto</span><strong>{capabilities.data?.remoteControl ? "HABILITADO" : "DESABILITADO"}</strong></div><div><span>Métricas declaradas</span><strong>{capabilities.data?.metrics.length ?? "N/D"}</strong></div></div></Panel>
 
       <details className="technical-details"><summary>Detalhes técnicos e qualidade</summary><div className="technical-grid"><div><span>Firmware</span><strong>{g.controller.firmware || "N/D"}</strong></div><div><span>Hardware</span><strong>{g.controller.hardwareVersion || "N/D"}</strong></div><div><span>Serial</span><strong>{g.controller.serialNumber || "N/D"}</strong></div><div><span>Potência nominal</span><strong>{g.spec?.ratedPowerKw ?? "N/D"}{g.spec?.ratedPowerKw !== undefined ? " kW" : ""}</strong></div><div><span>Tensão nominal</span><strong>{g.spec?.nominalVoltage ?? "N/D"}{g.spec?.nominalVoltage !== undefined ? " V" : ""}</strong></div><div><span>Frequência nominal</span><strong>{g.spec?.nominalFrequency ?? "N/D"}{g.spec?.nominalFrequency !== undefined ? " Hz" : ""}</strong></div></div>{t ? <div className="raw-metrics">{Object.entries(t.metrics).sort(([a], [b]) => a.localeCompare(b)).map(([key, metric]) => <div key={key}><code>{key}</code><span>{String(metric.value)} {metric.unit ?? ""}</span><StatusBadge tone={metric.quality}>{metric.quality}</StatusBadge><span>{formatDateTime(metric.observedAt)}</span></div>)}</div> : null}</details>
     </div>

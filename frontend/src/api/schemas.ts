@@ -60,6 +60,47 @@ export const eventSchema = z.object({
   occurredAt: z.string().datetime({ offset: true })
 });
 
+
+export const metricCapabilitySchema = z.object({
+  key: z.string().min(1),
+  displayName: z.string(),
+  kind: z.enum(["number", "text", "boolean"]),
+  unit: z.string().optional(),
+  required: z.boolean(),
+  staleAfterSeconds: z.number().int().positive()
+});
+
+export const generatorCapabilitiesSchema = z.object({
+  generatorId: z.string().min(1),
+  profileId: z.string().min(1),
+  profileStatus: z.string().min(1),
+  telemetry: z.boolean(),
+  alarms: z.boolean(),
+  events: z.boolean(),
+  maintenance: z.boolean(),
+  remoteControl: z.boolean(),
+  metrics: z.array(metricCapabilitySchema)
+});
+
+
+export const historyPointSchema = z.object({
+  timestamp: z.string().datetime({ offset: true }),
+  value: z.number(),
+  quality: qualitySchema
+});
+export const historySeriesSchema = z.object({
+  metricKey: z.string().min(1),
+  unit: z.string().optional(),
+  points: z.array(historyPointSchema)
+});
+export const historySnapshotSchema = z.object({
+  generatorId: z.string().min(1),
+  start: z.string().datetime({ offset: true }),
+  end: z.string().datetime({ offset: true }),
+  archiveBit: z.number().int().min(1).max(3),
+  series: z.array(historySeriesSchema)
+});
+
 export const providerHealthSchema = z.object({
   status: z.enum(["healthy", "degraded", "unavailable"]),
   checkedAt: z.string().datetime({ offset: true }),
@@ -82,3 +123,7 @@ export type Telemetry = z.infer<typeof telemetrySchema>;
 export type Alarm = z.infer<typeof alarmSchema>;
 export type Event = z.infer<typeof eventSchema>;
 export type SystemHealth = z.infer<typeof systemHealthSchema>;
+export type GeneratorCapabilities = z.infer<typeof generatorCapabilitiesSchema>;
+export type MetricCapability = z.infer<typeof metricCapabilitySchema>;
+export type HistorySnapshot = z.infer<typeof historySnapshotSchema>;
+export type HistorySeries = z.infer<typeof historySeriesSchema>;
