@@ -532,3 +532,17 @@ func TestOperatorCanUseDiagnosticsWithoutAdminSystemAccess(t *testing.T) {
 		t.Fatalf("operator admin system=%d body=%s", w.Code, w.Body.String())
 	}
 }
+
+func TestEmptyCollectionsSerializeAsArrays(t *testing.T) {
+	store, _ := newTestServer(t)
+	store.mu.Lock()
+	store.state.Sites = nil
+	store.state.Audit = nil
+	store.mu.Unlock()
+	if sites := store.ListSites(); sites == nil || len(sites) != 0 {
+		t.Fatalf("sites must be non-nil empty slice: %#v", sites)
+	}
+	if audit := store.Audit(10); audit == nil || len(audit) != 0 {
+		t.Fatalf("audit must be non-nil empty slice: %#v", audit)
+	}
+}

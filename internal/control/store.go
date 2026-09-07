@@ -492,7 +492,7 @@ func uniqueStrings(in []string) []string {
 func (s *Store) ListSites() []Site {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	out := append([]Site(nil), s.state.Sites...)
+	out := append([]Site{}, s.state.Sites...)
 	sort.Slice(out, func(i, j int) bool { return out[i].Code < out[j].Code })
 	return out
 }
@@ -933,7 +933,7 @@ func (s *Store) Audit(limit int) []AuditEvent {
 	if start < 0 {
 		start = 0
 	}
-	out := append([]AuditEvent(nil), s.state.Audit[start:]...)
+	out := append([]AuditEvent{}, s.state.Audit[start:]...)
 	sort.Slice(out, func(i, j int) bool { return out[i].At.After(out[j].At) })
 	return out
 }
