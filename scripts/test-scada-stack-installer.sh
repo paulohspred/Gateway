@@ -95,6 +95,7 @@ make_kit(){
 kit="$tmp/ok"
 make_kit "$kit"
 build_rapid_deb "$kit/rapidscada_6.4.7_all.deb" 6.4.7
+sha256sum "$kit/rapidscada_6.4.7_all.deb" > "$kit/rapidscada_6.4.7_all.deb.sha256"
 bash "$INSTALLER" --dry-run --dir "$kit" >/dev/null
 
 echo "stack installer positive DEB dry-run: OK"
@@ -108,6 +109,12 @@ zip_sha="$(sha256sum "$kit/rapidscada_6.4.7_linux_en.zip" | awk '{print $1}')"
 RC_SCADA_RAPID_SHA256="$zip_sha" bash "$INSTALLER" --dry-run --dir "$kit" >/dev/null
 
 echo "stack installer positive official-style ZIP dry-run: OK"
+
+if bash "$INSTALLER" --dry-run --dir "$kit" >/dev/null 2>&1; then
+  echo "ERRO: ZIP com nome oficial e conteúdo fora do hash pinado foi aceito" >&2
+  exit 1
+fi
+echo "stack installer enforces pinned Rapid SCADA 6.4.7 ZIP checksum: OK"
 
 kit="$tmp/wrong-version"
 make_kit "$kit"

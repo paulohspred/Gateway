@@ -97,12 +97,18 @@ echo "Construindo frontend com Node $actual_node e npm $(npm --version)..."
 find "$FRONTEND_DIR/dist/assets" -maxdepth 1 -type f -name 'index-*.js' -print -quit | grep -q . || { echo "ERRO: bundle frontend hashed ausente" >&2; exit 4; }
 FRONTEND_SBOM="$(mktemp)"
 ( cd "$FRONTEND_DIR" && npm sbom --sbom-format cyclonedx ) > "$FRONTEND_SBOM"
-python3 - "$FRONTEND_SBOM" <<'PY'
-import json,sys
-p=sys.argv[1]
-d=json.load(open(p,encoding="utf-8"))
+python3 - "$FRONTEND_SBOM" "$BUILD_DATE" "$COMMIT" <<'PY'
+import json,sys,uuid
+p,build_date,commit=sys.argv[1:4]
+with open(p,encoding="utf-8") as fh:
+    d=json.load(fh)
 assert d.get("bomFormat") == "CycloneDX"
 assert isinstance(d.get("components"), list) and d["components"]
+d["metadata"]["timestamp"]=build_date
+d["serialNumber"]="urn:uuid:" + str(uuid.uuid5(uuid.NAMESPACE_URL, "rc-monitor-frontend:" + commit))
+with open(p,"w",encoding="utf-8",newline="\n") as fh:
+    json.dump(d,fh,ensure_ascii=False,sort_keys=True,separators=(",",":"))
+    fh.write("\n")
 PY
 
 rm -rf "$DIST_DIR"

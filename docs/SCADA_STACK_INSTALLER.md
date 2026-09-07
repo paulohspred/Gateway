@@ -30,12 +30,26 @@ scada-kit/
 ├── install-rc-lab-stack.sh
 ├── rc-gateway_<versao>_linux_amd64.tar.gz
 ├── rc-gateway_<versao>_linux_amd64.tar.gz.sha256
-├── rapidscada_6.4.7_all.deb              # ou ZIP Linux oficial
+├── rapidscada_6.4.7_linux_en.zip         # ZIP Linux oficial recomendado
 ├── rc-gateway.safe.json
 └── rc-monitor.rapid.env                   # criado localmente, NÃO versionar
 ```
 
 O archive RC contém `bin/rc-gateway`, `bin/rc-monitor`, `frontend/index.html`, assets hashed, systemd units, perfis, configs e scripts. O installer recusa releases onde `rc-monitor` não é executável ou o frontend não está presente.
+
+
+### Integridade do Rapid SCADA
+
+A instalação é **fail-closed** para o pacote Rapid SCADA: pacote sem checksum confiável é recusado.
+
+Para o ZIP oficial Linux 6.4.7 usado e validado no ciclo LAB, o instalador fixa:
+
+```text
+rapidscada_6.4.7_linux_en.zip
+SHA256=48e8c8c33b8380fddc7c6012d6856123cb6328a1645e784e97a29aa525311180
+```
+
+Para um `.deb` direto ou qualquer fonte diferente, forneça `RC_SCADA_RAPID_SHA256=<sha256>` ou um arquivo `<pacote>.sha256` adjacente. O hash deve vir de uma fonte previamente confiável; não gere o sidecar a partir de um pacote não verificado no momento da instalação.
 
 ## Credencial Rapid local
 

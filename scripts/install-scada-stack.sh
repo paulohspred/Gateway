@@ -10,6 +10,7 @@ GATEWAY_CONFIG=""
 EXPECTED_RAPID_VERSION="${RC_SCADA_RAPID_VERSION:-6.4.7}"
 ALLOW_UNSUPPORTED_OS="${RC_SCADA_ALLOW_UNSUPPORTED_OS:-0}"
 RAPID_SHA256_EXPECTED="${RC_SCADA_RAPID_SHA256:-}"
+RAPID_6_4_7_LINUX_ZIP_SHA256="48e8c8c33b8380fddc7c6012d6856123cb6328a1645e784e97a29aa525311180"
 STATE_DIR="/var/lib/rc-scada-stack"
 WEB_OVERRIDE="/etc/systemd/system/scadaweb6.service.d/10-rc-scada-loopback.conf"
 SCADACOMM_USER="scadacomm"
@@ -196,15 +197,18 @@ verify_optional_source_checksum() {
     [[ "${actual,,}" == "${RAPID_SHA256_EXPECTED,,}" ]] || die "SHA256 do pacote Rapid SCADA não confere com RC_SCADA_RAPID_SHA256" 3
     return
   fi
-  if [[ -f "$checksum" ]]; then
-    local expected actual
+  local expected=""
+  if [[ "$EXPECTED_RAPID_VERSION" == "6.4.7" && "$(basename "$source")" == "rapidscada_6.4.7_linux_en.zip" ]]; then
+    expected="$RAPID_6_4_7_LINUX_ZIP_SHA256"
+  elif [[ -f "$checksum" ]]; then
     expected="$(awk 'NF {print $1; exit}' "$checksum")"
-    actual="$(sha256sum "$source" | awk '{print $1}')"
-    [[ "$expected" =~ ^[0-9a-fA-F]{64}$ ]] || die "checksum Rapid SCADA inválido: $checksum" 3
-    [[ "${actual,,}" == "${expected,,}" ]] || die "SHA256 do pacote Rapid SCADA não confere" 3
   else
-    warn "pacote Rapid SCADA não possui checksum local/pinado; registre RC_SCADA_RAPID_SHA256 no kit de produção."
+    die "pacote Rapid SCADA sem checksum confiável; use RC_SCADA_RAPID_SHA256 ou $checksum" 3
   fi
+  local actual
+  actual="$(sha256sum "$source" | awk '{print $1}')"
+  [[ "$expected" =~ ^[0-9a-fA-F]{64}$ ]] || die "checksum Rapid SCADA inválido: $checksum" 3
+  [[ "${actual,,}" == "${expected,,}" ]] || die "SHA256 do pacote Rapid SCADA não confere" 3
 }
 verify_optional_source_checksum "$RAPID_SOURCE"
 
