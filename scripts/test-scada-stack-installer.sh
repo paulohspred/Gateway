@@ -3,6 +3,7 @@ set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 INSTALLER="$ROOT_DIR/scripts/install-scada-stack.sh"
+RELEASE_INSTALLER="$ROOT_DIR/scripts/install-release.sh"
 SAFE_CONFIG="$ROOT_DIR/configs/scada-stack.safe.example.json"
 
 usage(){ echo "Uso: $0 GATEWAY.tar.gz GATEWAY.tar.gz.sha256" >&2; exit 64; }
@@ -21,6 +22,12 @@ grep -q 'rc-scada-internal-firewall.service' "$INSTALLER"
 grep -q 'ip daddr != 127.0.0.0/8 tcp dport { 10000, 10002 }' "$INSTALLER"
 grep -q 'ip6 daddr != ::1 tcp dport { 10000, 10002 }' "$INSTALLER"
 echo "stack installer Rapid internal-port firewall contract: OK"
+
+# Regression guards learned from a clean Rapid SCADA 6.4.7 VM install.
+grep -q 'SCADA_INSTANCE_CONFIG="/opt/scada/Config/ScadaInstanceConfig.xml"' "$INSTALLER"
+grep -q 'chmod 0755 "$release_dir/bin/rc-gateway" "$release_dir/bin/rc-monitor"' "$RELEASE_INSTALLER"
+grep -q "! -path '\*/bin/rc-monitor'" "$RELEASE_INSTALLER"
+echo "stack installer Rapid path and RC Monitor executable contracts: OK"
 
 # HARD-001: ScadaComm was homologated non-root in the VM. The installer must
 # encode that exact least-privilege posture without taking ownership of the
