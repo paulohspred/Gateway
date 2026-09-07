@@ -78,7 +78,7 @@ Rapid SCADA: 6.4.7-1
 Node: 22.23.2
 npm: 10.9.8
 Go: 1.27.1
-release instalada na VM LAB: fix5-fe51b61
+release instalada na VM LAB: ui4-final-810aa84
 ```
 
 Correções descobertas por instalação limpa e agora codificadas:
@@ -92,7 +92,7 @@ Correções descobertas por instalação limpa e agora codificadas:
 - installer do frontend/Nginx com backup, `nginx -t`, restart, health gate e rollback;
 - acceptance de SPA, deep links, API read-only, 405, cache, headers e listener isolation;
 - `install-rc-lab-stack.sh` orquestra stack-base -> Rapid Auth API -> Monitor -> frontend -> acceptance;
-- LAB exige sidecar SHA-256 do pacote Rapid e registra o hash efetivamente instalado;
+- o installer é fail-closed para Rapid SCADA sem checksum confiável; o ZIP oficial 6.4.7 usado no LAB está pinado em `48e8c8c33b8380fddc7c6012d6856123cb6328a1645e784e97a29aa525311180`, e fontes alternativas exigem `RC_SCADA_RAPID_SHA256` ou sidecar `.sha256`;
 - release validator deixou de usar pipelines `tar | grep -q` sujeitos a SIGPIPE/141;
 - Gateway CI teve comandos `run:` com quoting YAML inválido corrigidos para blocos; `actionlint` pinado passou no workflow corrigido;
 - `scripts/ci.sh` agora valida configs de Monitor com path absoluto de runtime no contexto equivalente do checkout, sem confundir `/etc`/`/opt` com source tree;
@@ -186,8 +186,10 @@ Estado validado na `tes`:
 
 ```text
 software/LAB: 28/28 PASS_TES
-source/GitHub tree: 23935277fc754e4c42fa2b2dd5e9dd7704ce823b
-source/GitHub HEAD antes do commit documental: d2e741a4d8e19cdd3da88857ceaefe23d611342c
+source/GitHub HEAD: e1ca27e5026382be2a8195279589f23593c84336
+source/GitHub tree: 0663359cf27a356fd329195590dd43dbad997fba
+release instalada: ui4-final-810aa84
+release Manifest commit: 810aa846a9177e410fe0acb3ed05f878ca258bfb
 admin bootstrap password change: PASS live
 admin MFA TOTP: PASS live
 outage/recovery: PASS live
@@ -195,10 +197,12 @@ restart: PASS live
 cold boot: PASS live
 post-boot required telemetry: GOOD
 post-boot Rapid history: HTTP 200, 2 series
+release reproducibility local AMD64+ARM64: PASS byte-a-byte
+Rapid SCADA 6.4.7 Linux ZIP SHA256 pin: 48e8c8c33b8380fddc7c6012d6856123cb6328a1645e784e97a29aa525311180
 PRODUCTION_VALIDATED=false
 ```
 
-A release em execução durante o cold boot (`ui4-final-mfa-qr-1540712`) possui o mesmo tree de código do HEAD remoto `d2e741a`, porém o Manifest ainda referencia o commit local equivalente `1540712`. REL-003 só fecha depois de uma release final reconstruída a partir do HEAD documental definitivo e de CI/CodeQL remoto verde.
+A release atualmente em execução (`ui4-final-810aa84`) contém o runtime já validado na `tes` e referencia `810aa846` no Manifest. O HEAD `e1ca27e` adiciona apenas hardening de release/installer/documentação: SBOM frontend determinístico para builds byte-a-byte e pinagem fail-closed do pacote Rapid SCADA. REL-003 só fecha depois de CI/CodeQL remoto verde neste HEAD, proteção/merge de `main`, rebuild da release a partir do SHA final de `main` e smoke final na `tes`.
 
 ## Política de controladoras
 
@@ -237,8 +241,8 @@ GenMon é referência funcional/factual clean-room, não fonte para copiar códi
 | UI-003 | DONE | Release/frontend/Nginx/orquestrador LAB reproduzível e E2E Rapid -> Monitor -> frontend validado em VM limpa. |
 | UI-004 | DONE | Capabilities/history, edge cases de quality, responsividade/a11y e superfícies operacionais/admin/engenharia implementadas; validação final pertence a REL-003. |
 | REL-001 | TODO | Confirmar proteção de main. |
-| REL-002 | DONE | Release inclui Gateway, Monitor e frontend; validation/dry-run reproduzíveis. |
-| REL-003 | IN_PROGRESS | 28/28 software/LAB PASS_TES e tree Git alinhado; falta congelar release final no HEAD documental, CI/CodeQL remoto e governança/merge de main. |
+| REL-002 | DONE | Release inclui Gateway, Monitor e frontend; SBOM frontend foi normalizado e AMD64/ARM64 são reproduzíveis byte-a-byte em teste local. |
+| REL-003 | IN_PROGRESS | 28/28 software/LAB PASS_TES; HEAD `e1ca27e` alinhado GitHub/local. Faltam CI remoto verde, proteção/merge de main e release final construída do SHA de main com smoke na `tes`. |
 | VM-CLEAN-001 | NEXT | Criar VM Ubuntu limpa somente depois de REL-003 DONE e 28/28 PASS_TES. |
 | PROD-001 | BLOCKED | Exige SOAK verificado + SEM real + HIL + aprovação. |
 <!-- CHECKLIST_END -->
@@ -246,14 +250,14 @@ GenMon é referência funcional/factual clean-room, não fonte para copiar códi
 ## Próximo passo exato
 
 ```text
-1. commit/push desta evidência final e alinhar GitHub/local;
-2. executar CI + CodeQL remoto no HEAD final;
-3. construir release final com SBOM a partir do mesmo HEAD e reinstalar na `tes`, preservando `RC_FRONTEND_BIND=0.0.0.0:80`;
-4. repetir acceptance final e confirmar Manifest/Git/GitHub no mesmo commit;
-5. configurar proteção de `main` conforme política e promover o PR de release somente com gates verdes;
-6. marcar REL-003 DONE;
-7. somente então iniciar VM-CLEAN-001 em uma VM Ubuntu limpa para prova independente de instalação;
-8. HIL/SEM/SOAK de campo permanecem gates posteriores antes de `PRODUCTION_VALIDATED=true`.
+1. publicar este handoff atualizado e obter CI + CodeQL remoto verde no HEAD final;
+2. configurar proteção de `main` conforme `docs/GITHUB_PROTECTION.md`;
+3. promover o PR #5 para `main` somente com todos os gates verdes;
+4. congelar o SHA final de `main` e marcar o handoff de release;
+5. construir release AMD64+ARM64 com SBOM a partir do SHA final de `main`;
+6. reinstalar essa release na `tes`, preservar `RC_FRONTEND_BIND=0.0.0.0:80` e repetir acceptance/Manifest/Git;
+7. marcar REL-003 DONE;
+8. somente então iniciar VM-CLEAN-001; HIL/SEM/SOAK de campo permanecem gates posteriores antes de `PRODUCTION_VALIDATED=true`.
 ```
 
 `PRODUCTION_VALIDATED=false`. HIL físico, SEM real de campo e produção permanecem gates externos separados.
