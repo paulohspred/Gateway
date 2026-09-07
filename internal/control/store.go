@@ -498,23 +498,44 @@ func (s *Store) ListSites() []Site {
 }
 
 type SiteInput struct {
+	ID       string `json:"id,omitempty"`
 	Code     string `json:"code"`
 	Name     string `json:"name"`
 	TimeZone string `json:"timeZone"`
 	Active   *bool  `json:"active"`
 }
 
+func validSiteID(v string) bool {
+	if len(v) < 1 || len(v) > 80 {
+		return false
+	}
+	for _, r := range v {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '.' || r == '_' || r == '-' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
 func (s *Store) CreateSite(actor User, in SiteInput) (Site, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	in.ID = strings.TrimSpace(in.ID)
 	in.Code = strings.TrimSpace(in.Code)
 	in.Name = strings.TrimSpace(in.Name)
 	if in.Code == "" || in.Name == "" {
 		return Site{}, errors.New("code and name are required")
 	}
+	if in.ID != "" && !validSiteID(in.ID) {
+		return Site{}, errors.New("invalid site integration id")
+	}
 	for _, x := range s.state.Sites {
 		if strings.EqualFold(x.Code, in.Code) {
 			return Site{}, errors.New("site code already exists")
+		}
+		if in.ID != "" && x.ID == in.ID {
+			return Site{}, errors.New("site integration id already exists")
 		}
 	}
 	now := time.Now().UTC()
@@ -522,7 +543,11 @@ func (s *Store) CreateSite(actor User, in SiteInput) (Site, error) {
 	if in.Active != nil {
 		active = *in.Active
 	}
-	site := Site{ID: newID("site"), Code: in.Code, Name: in.Name, TimeZone: strings.TrimSpace(in.TimeZone), Active: active, CreatedAt: now, UpdatedAt: now}
+	siteID := in.ID
+	if siteID == "" {
+		siteID = newID("site")
+	}
+	site := Site{ID: siteID, Code: in.Code, Name: in.Name, TimeZone: strings.TrimSpace(in.TimeZone), Active: active, CreatedAt: now, UpdatedAt: now}
 	if site.TimeZone == "" {
 		site.TimeZone = "UTC"
 	}

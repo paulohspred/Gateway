@@ -7,12 +7,12 @@ import { Panel } from "../components/Panel";
 import { StatusBadge } from "../components/StatusBadge";
 import { Topbar } from "../components/Topbar";
 
-type SiteForm = { code: string; name: string; timeZone: string; active?: boolean };
+type SiteForm = { id?: string; code: string; name: string; timeZone: string; active?: boolean };
 export function SitesPage() {
   const auth = useAuth();
   const qc = useQueryClient();
   const query = useQuery({ queryKey: ["admin-sites"], queryFn: controlApi.sites });
-  const [form, setForm] = useState<SiteForm>({ code: "", name: "", timeZone: "America/Sao_Paulo" });
+  const [form, setForm] = useState<SiteForm>({ id: "", code: "", name: "", timeZone: "America/Sao_Paulo" });
   const [show, setShow] = useState(false);
   const [editing, setEditing] = useState<Site | null>(null);
   const [edit, setEdit] = useState<SiteForm | null>(null);
@@ -21,7 +21,7 @@ export function SitesPage() {
   const refresh = () => void qc.invalidateQueries({ queryKey: ["admin-sites"] });
   const create = useMutation({
     mutationFn: () => controlApi.createSite(auth.csrf, form),
-    onSuccess: () => { setShow(false); setForm({ code: "", name: "", timeZone: "America/Sao_Paulo" }); setMessage("Site criado e auditado."); refresh(); },
+    onSuccess: () => { setShow(false); setForm({ id: "", code: "", name: "", timeZone: "America/Sao_Paulo" }); setMessage("Site criado e auditado."); refresh(); },
     onError: (e) => setMessage(e instanceof Error ? e.message : "Falha ao criar site")
   });
   const beginEdit = (site: Site) => { setEditing(site); setEdit({ code: site.code, name: site.name, timeZone: site.timeZone, active: site.active }); setMessage(""); };
@@ -33,7 +33,7 @@ export function SitesPage() {
     <div className="content-grid">
       {message ? <div className="info-banner">{message}</div> : null}
       {show ? <Panel title="Cadastrar site"><form className="admin-form-grid" onSubmit={(e) => { e.preventDefault(); create.mutate(); }}>
-        <label>Código<input value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} required/></label>
+        <label>ID de integração (opcional)<input value={form.id ?? ""} onChange={(e) => setForm({ ...form, id: e.target.value })} placeholder="ex. site-sim-001"/><small>Use o mesmo siteId do RC Monitor quando integrar uma frota existente.</small></label><label>Código<input value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} required/></label>
         <label>Nome<input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required/></label>
         <label>Timezone<input value={form.timeZone} onChange={(e) => setForm({ ...form, timeZone: e.target.value })} required/></label>
         <button className="primary-button" disabled={create.isPending}>Criar site</button>

@@ -469,10 +469,13 @@ func TestControlPlaneAdministrativeAndEngineeringEndpoints(t *testing.T) {
 	assertStatus(http.MethodPatch, "/api/v1/auth/preferences", map[string]any{"language": "pt-BR", "timeZone": "UTC", "unitSystem": "metric", "fleetView": "list"}, http.StatusOK)
 	assertStatus(http.MethodGet, "/api/v1/admin/roles", nil, http.StatusOK)
 	assertStatus(http.MethodGet, "/api/v1/admin/users", nil, http.StatusOK)
-	w := assertStatus(http.MethodPost, "/api/v1/admin/sites", map[string]any{"code": "LAB", "name": "Lab", "timeZone": "UTC"}, http.StatusCreated)
+	w := assertStatus(http.MethodPost, "/api/v1/admin/sites", map[string]any{"id": "site-lab", "code": "LAB", "name": "Lab", "timeZone": "UTC"}, http.StatusCreated)
 	var site Site
 	if err := json.Unmarshal(w.Body.Bytes(), &site); err != nil {
 		t.Fatal(err)
+	}
+	if site.ID != "site-lab" {
+		t.Fatalf("site integration id=%s", site.ID)
 	}
 	siteID = site.ID
 	assertStatus(http.MethodPatch, "/api/v1/admin/sites/"+site.ID, map[string]any{"code": "LAB", "name": "Lab Updated", "timeZone": "UTC", "active": true}, http.StatusOK)
