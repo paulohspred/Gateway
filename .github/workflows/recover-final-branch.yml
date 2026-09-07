@@ -1,0 +1,32 @@
+name: Recover final branch
+
+on:
+  push:
+    branches:
+      - recovery/import-2770d2c
+
+permissions:
+  contents: write
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Restore exact Git commit
+        env:
+          BUNDLE_URL: https://drop.pensa.ar/f/jSuH9BvYm78pO/rc-frontend-contract-2770d2c.bundle
+          BUNDLE_SHA256: 1116f07bc6e520f7dfde52ac5ede02b903c2c9198198d339d69e2fe3c8f25794
+          TARGET_SHA: 2770d2c69ee7c3d9379d66749a240b855feb4052
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -fsSL "$BUNDLE_URL" -o /tmp/final.bundle
+          echo "$BUNDLE_SHA256  /tmp/final.bundle" | sha256sum -c -
+          mkdir /tmp/recover && cd /tmp/recover
+          git init
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch /tmp/final.bundle feature/frontend-contract:refs/remotes/bundle/final
+          test "$(git rev-parse refs/remotes/bundle/final)" = "$TARGET_SHA"
+          git fetch origin feature/frontend-contract
+          git merge-base --is-ancestor FETCH_HEAD refs/remotes/bundle/final
+          git push origin refs/remotes/bundle/final:refs/heads/feature/frontend-contract
