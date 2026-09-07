@@ -38,6 +38,8 @@ echo "application release payload/tooling contract: OK"
 # must restore the previous known-good state on health-gate failure.
 grep -Fq 'deve ser absoluto para instalação em /etc' "$MONITOR"
 grep -Fq 'nova configuração do RC Monitor não ficou ready; restaurando estado anterior' "$MONITOR"
+grep -Fq 'if [[ "$ENV_SOURCE" == "$env_target_real" ]]' "$MONITOR"
+grep -Fq 'chmod 0600 "$ENV_TARGET"' "$MONITOR"
 grep -Fq 'cp --preserve=mode,ownership,timestamps "$backup_dir/config" "$CONFIG_TARGET"' "$MONITOR"
 grep -Fq -- '-h|--help)' "$MONITOR"
 grep -Fq 'usage 0' "$MONITOR"

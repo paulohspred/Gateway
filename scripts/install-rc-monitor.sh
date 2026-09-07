@@ -121,7 +121,13 @@ install -o root -g rc-monitor -m 0640 "$CONFIG_SOURCE" "$config_candidate"
 mv -f "$config_candidate" "$CONFIG_TARGET"
 
 if [[ -n "$ENV_SOURCE" ]]; then
-  install -o root -g root -m 0600 "$ENV_SOURCE" "$ENV_TARGET"
+  env_target_real="$(realpath -m -- "$ENV_TARGET")"
+  if [[ "$ENV_SOURCE" == "$env_target_real" ]]; then
+    chown root:root "$ENV_TARGET"
+    chmod 0600 "$ENV_TARGET"
+  else
+    install -o root -g root -m 0600 "$ENV_SOURCE" "$ENV_TARGET"
+  fi
 elif [[ ! -f "$ENV_TARGET" ]]; then
   install -o root -g root -m 0600 /dev/null "$ENV_TARGET"
 fi
