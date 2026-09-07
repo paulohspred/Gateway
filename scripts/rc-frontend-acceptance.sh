@@ -30,10 +30,8 @@ generators="$(curl -fsS --max-time 5 "$BASE_URL/api/v1/generators")" || fail "ge
 generator_id="$(python3 -c 'import json,sys; data=json.load(sys.stdin); print(data[0]["id"] if data else "")' <<<"$generators")"
 [[ -n "$generator_id" ]] || fail "generators API returned no generator"
 
-for route in "/generators/$generator_id"; do
-  code="$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' "$BASE_URL$route")"
-  [[ "$code" == "200" ]] || fail "deep SPA route $route returned HTTP $code"
-done
+code="$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' "$BASE_URL/generators/$generator_id")"
+[[ "$code" == "200" ]] || fail "deep SPA route /generators/$generator_id returned HTTP $code"
 pass "SPA deep-link refresh works"
 
 curl -fsS --max-time 5 "$BASE_URL/api/v1/system/health" >/dev/null || fail "system health API failed"
@@ -52,7 +50,7 @@ index_headers="$(mktemp)"
 index_body="$(mktemp)"
 curl -fsS --max-time 5 -D "$index_headers" -o "$index_body" "$BASE_URL/"
 grep -qi '^Cache-Control: no-store' "$index_headers" || fail "index.html does not advertise no-store"
-asset="$(python3 -c 'import re,sys; text=open(sys.argv[1]).read(); m=re.search(r"/assets/[^"]+\.js", text); print(m.group(0) if m else "")' "$index_body")"
+asset="$(grep -oE '/assets/index-[A-Za-z0-9_-]+\.js' "$index_body" | head -n1 || true)"
 [[ -n "$asset" ]] || fail "hashed JS asset was not found in index.html"
 asset_headers="$(mktemp)"
 curl -fsS --max-time 5 -D "$asset_headers" -o /dev/null "$BASE_URL$asset"
