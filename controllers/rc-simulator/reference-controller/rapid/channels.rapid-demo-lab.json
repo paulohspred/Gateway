@@ -20,7 +20,5 @@
   "alarms": [
     {"code":"SIMULATED_DIGITAL_ALARM","channelNumber":102,"active":{"kind":"equals","value":0}}
   ],
-  "events": [
-    {"type":"controller.test_event","channelNumber":102,"condition":{"kind":"nonzero"},"message":"Synthetic Rapid SCADA demo transition"}
-  ]
+  "events": []
 }
