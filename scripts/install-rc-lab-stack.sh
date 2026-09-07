@@ -21,6 +21,8 @@ Opções:
 
 Este instalador é SOMENTE para laboratório/simulação. Ele não configura controladora
 física, não habilita escrita industrial e mantém AllowCommandApi=false.
+O pacote Rapid SCADA deve possuir sidecar .sha256 no kit para impedir instalação
+acidental de um arquivo diferente do artifact previamente congelado.
 USAGE
   exit "${1:-64}"
 }
@@ -49,6 +51,16 @@ for name in RC_RAPID_USER RC_RAPID_PASSWORD; do
   count="$(grep -Ec "^${name}=.+$" "$RAPID_ENV" || true)"
   [[ "$count" == "1" ]] || { echo "ERRO: $RAPID_ENV deve conter exatamente uma variável $name não vazia" >&2; exit 4; }
 done
+
+mapfile -t rapid_sources < <(find "$SOURCE_DIR" -maxdepth 1 -type f \( -name 'rapidscada_*_all.deb' -o -name 'rapidscada_*_linux*.zip' \) -print | sort)
+[[ ${#rapid_sources[@]} -eq 1 ]] || { echo "ERRO: kit LAB deve conter exatamente um pacote Rapid SCADA; encontrados ${#rapid_sources[@]}" >&2; exit 2; }
+RAPID_SOURCE="${rapid_sources[0]}"
+RAPID_CHECKSUM="$RAPID_SOURCE.sha256"
+[[ -f "$RAPID_CHECKSUM" ]] || { echo "ERRO: checksum Rapid obrigatório no LAB: $RAPID_CHECKSUM" >&2; exit 3; }
+expected_rapid_sha="$(awk 'NF {print $1; exit}' "$RAPID_CHECKSUM")"
+actual_rapid_sha="$(sha256sum "$RAPID_SOURCE" | awk '{print $1}')"
+[[ "$expected_rapid_sha" =~ ^[0-9a-fA-F]{64}$ ]] || { echo "ERRO: checksum Rapid inválido: $RAPID_CHECKSUM" >&2; exit 3; }
+[[ "${expected_rapid_sha,,}" == "${actual_rapid_sha,,}" ]] || { echo "ERRO: SHA256 do Rapid SCADA não confere" >&2; exit 3; }
 
 STACK_INSTALLER="$SOURCE_DIR/install-scada-stack.sh"
 [[ -x "$STACK_INSTALLER" || -f "$STACK_INSTALLER" ]] || { echo "ERRO: install-scada-stack.sh ausente no kit" >&2; exit 2; }
@@ -79,6 +91,8 @@ mode=SIMULATION_TEST_ONLY
 installed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 frontend_bind=$FRONTEND_BIND
 rapid_provider=rapid-web
+rapid_source=$(basename "$RAPID_SOURCE")
+rapid_source_sha256=$actual_rapid_sha
 rapid_commands=false
 physical_controller=false
 production_validated=false
