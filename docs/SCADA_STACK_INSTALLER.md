@@ -1,184 +1,244 @@
-# Instalador único — RC Gateway + Rapid SCADA v6.4.7
+# Instaladores RC — Gateway + Rapid SCADA 6.4.7 + RC Monitor + Frontend
 
-## Objetivo
+## Escopo
 
-Este instalador prepara uma VM **Ubuntu Server 24.04** para a fase atual do SCADA de geradores:
+A release RC agora contém o runtime completo da aplicação própria:
 
 ```text
-controladora / modem / VPN / RS485 / Ethernet
-                 |
-            RC Gateway
-                 |
-             loopback TCP
-                 |
-       Rapid SCADA v6.4.7
+RC Gateway
+RC Monitor
+Frontend React/Vite pré-compilado
+systemd units
+configs/perfis de laboratório
+installers e acceptance scripts
 ```
 
-Backend próprio, frontend próprio e demais serviços ficam fora deste instalador.
+O **Rapid SCADA 6.4.7 continua sendo pacote de terceiro separado** e nunca é incorporado ao artifact proprietário.
 
-O Rapid SCADA continua sendo software de terceiro e **não é incorporado ao código ou ao pacote proprietário do RC Gateway**. O operador coloca o pacote Linux oficial do Rapid SCADA no mesmo diretório do kit.
+Há dois fluxos deliberadamente distintos:
 
-## Arquivos no diretório
+1. `install-scada-stack.sh`: instala o baseline Gateway + Rapid SCADA + hardening interno;
+2. `install-rc-lab-stack.sh`: orquestra o baseline e, em seguida, configura Rapid Web API read-only, RC Monitor, frontend/Nginx e acceptance de laboratório.
 
-Para uma VM amd64, o diretório pode ficar assim:
+O segundo fluxo é **SIMULATION_TEST_ONLY**. Ele não homologa controladora física e não altera `PRODUCTION_VALIDATED=false`.
+
+## Kit de uma VM amd64
 
 ```text
 scada-kit/
 ├── install-scada-stack.sh
+├── install-rc-lab-stack.sh
 ├── rc-gateway_<versao>_linux_amd64.tar.gz
 ├── rc-gateway_<versao>_linux_amd64.tar.gz.sha256
-├── rapidscada_6.4.7_all.deb
-└── rc-gateway.json                 # opcional
+├── rapidscada_6.4.7_all.deb              # ou ZIP Linux oficial
+├── rc-gateway.safe.json
+└── rc-monitor.rapid.env                   # criado localmente, NÃO versionar
 ```
 
-O instalador também aceita o ZIP Linux oficial do Rapid SCADA no lugar do `.deb`, desde que `unzip` esteja instalado ou a VM tenha acesso aos repositórios APT.
+O archive RC contém `bin/rc-gateway`, `bin/rc-monitor`, `frontend/index.html`, assets hashed, systemd units, perfis, configs e scripts. O installer recusa releases onde `rc-monitor` não é executável ou o frontend não está presente.
 
-Se `rc-gateway.json` não existir, o instalador usa `rc-gateway.safe.json` quando presente ou gera uma configuração segura com **zero tunnels de campo**. Isso instala e inicia o stack sem tentar se conectar a uma controladora ainda não homologada.
+## Credencial Rapid local
 
-## Instalação em uma VM limpa
-
-Entre no diretório e execute:
+Crie o arquivo somente na VM/kit protegido:
 
 ```bash
-sudo bash install-scada-stack.sh
+sudo install -m 0600 -o root -g root /dev/null /root/rc-monitor.rapid.env
+sudoedit /root/rc-monitor.rapid.env
 ```
+
+Conteúdo:
+
+```text
+RC_RAPID_USER=<usuario_read_only>
+RC_RAPID_PASSWORD=<senha_local>
+```
+
+O arquivo precisa estar em modo `0600` ou `0400`. O instalador copia o segredo para `/etc/rc-monitor.env` em modo `0600`; nenhum segredo entra no JSON, no frontend ou no repositório.
+
+## Instalação completa do laboratório
+
+Para manter o frontend somente em loopback:
+
+```bash
+sudo bash install-rc-lab-stack.sh \
+  --dir /caminho/scada-kit \
+  --rapid-env /root/rc-monitor.rapid.env
+```
+
+Para uma VM descartável acessível pela LAN, a exposição HTTP precisa ser explícita:
+
+```bash
+sudo bash install-rc-lab-stack.sh \
+  --dir /caminho/scada-kit \
+  --rapid-env /root/rc-monitor.rapid.env \
+  --frontend-bind 0.0.0.0:80
+```
+
+Esse fluxo executa, em ordem:
+
+1. checksum e validação estrutural do artifact RC;
+2. validação da versão/package metadata do Rapid SCADA 6.4.7;
+3. instalação do Rapid e do Gateway;
+4. hardening non-root do `scadacomm6` usando `/opt/scada/Config/ScadaInstanceConfig.xml`;
+5. nftables para impedir acesso não-loopback às portas Rapid 10000/10002;
+6. Webstation Rapid fixado em `127.0.0.1:10008`;
+7. `AllowAuthApi=true` e **`AllowCommandApi=false`** por edição validada e com backup;
+8. instalação transacional do RC Monitor com provider `rapid-web`;
+9. binding semântico **de laboratório** sobre os canais do projeto demo Rapid;
+10. instalação do frontend pré-compilado e Nginx;
+11. acceptance SPA/API/read-only/cache/headers/listeners;
+12. registro `/var/lib/rc-scada-stack/lab-mode.env` com `SIMULATION_TEST_ONLY` e `production_validated=false`.
+
+A topologia resultante é:
+
+```text
+Browser -> Nginx :80
+             ├─ /api/*   -> RC Monitor 127.0.0.1:18100
+             ├─ /healthz -> RC Monitor
+             ├─ /readyz  -> RC Monitor
+             └─ SPA      -> /opt/rc-gateway/current/frontend
+
+RC Monitor -> Rapid Web API 127.0.0.1:10008
+RC Gateway admin -> 127.0.0.1:18080
+Rapid Server/Agent -> portas 10000/10002 protegidas por nftables
+```
+
+O Rapid Webstation não é publicado pelo Nginx quando o frontend RC está instalado.
+
+## Binding Rapid demo de laboratório
+
+A instalação limpa do Rapid 6.4.7 traz canais de simulador (`Sine`, `Square`, `Triangle`, `Array`). Esses canais **não possuem semântica de gerador por si só**.
+
+Por isso o laboratório usa um binding dedicado:
+
+```text
+controllers/rc-simulator/reference-controller/rapid/channels.rapid-demo-lab.json
+configs/monitor/rc-monitor.rapid-demo-lab.json
+```
+
+As transformações produzem faixas plausíveis apenas para exercitar HMI, quality, alarmes e recuperação. Os valores devem ser tratados como **simulação**, nunca como medição de campo ou evidência HIL. O alarme `SIMULATED_DIGITAL_ALARM` existe exclusivamente para esse teste.
+
+## Installer-base
+
+Para instalar somente Rapid + Gateway:
+
+```bash
+sudo bash install-scada-stack.sh --dir /caminho/scada-kit
+```
+
+Se `rc-gateway.json` não existir, o script usa `rc-gateway.safe.json` quando presente ou gera configuração segura com zero tunnels de campo.
+
+Em instalação existente, qualquer alteração fica bloqueada por padrão. Rerun/upgrade exige autorização explícita:
+
+```bash
+sudo bash install-scada-stack.sh --dir /caminho/scada-kit --upgrade
+```
+
+No orquestrador de laboratório:
+
+```bash
+sudo bash install-rc-lab-stack.sh \
+  --dir /caminho/scada-kit \
+  --rapid-env /root/rc-monitor.rapid.env \
+  --upgrade
+```
+
+## Dry-run
+
+O baseline pode ser validado sem alterar a VM:
+
+```bash
+bash install-scada-stack.sh --dir /caminho/scada-kit --dry-run
+```
+
+O release interno também executa `install-release.sh --dry-run`, que agora exige simultaneamente Gateway, RC Monitor executável e frontend compilado.
+
+## Rapid Web API read-only
 
 O script:
 
-1. detecta `amd64` ou `arm64` e escolhe exatamente um archive compatível;
-2. confere SHA-256 do RC Gateway;
-3. rejeita paths, links e tipos inseguros no archive do Gateway;
-4. extrai o instalador seguro existente dentro do próprio artifact e executa seu dry-run;
-5. valida `Package=rapidscada`, arquitetura e versão `6.4.7` do `.deb`;
-6. instala `ca-certificates`, `curl`, `nginx`, `unzip` e ASP.NET Core Runtime 8.0 quando necessário;
-7. instala Rapid SCADA usando o pacote local;
-8. instala o RC Gateway pelo installer health-gated existente;
-9. habilita `scadaagent6`, `scadaserver6`, `scadacomm6`, `scadaweb6`, `nginx` e `rc-gateway` no boot;
-10. força o Webstation upstream a ouvir em `127.0.0.1:10008` por systemd override;
-11. configura Nginx somente em `127.0.0.1:80`;
-12. testa serviços, Gateway `/readyz`, Webstation e proxy Nginx;
-13. grava evidência da instalação em `/var/lib/rc-scada-stack/install-state.env`.
+```bash
+sudo /opt/rc-gateway/current/scripts/configure-rapid-web-api.sh
+```
 
-## Segurança por padrão
+altera somente:
 
-O instalador **não expõe o Rapid SCADA Webstation na LAN ou Internet**. O serviço upstream v6.4.7 inicia em `0.0.0.0:10008`; o stack aplica um override para `127.0.0.1:10008`, e o Nginx também fica em loopback.
+```xml
+<Option name="AllowCommandApi" value="false" />
+<Option name="AllowAuthApi" value="true" />
+```
 
-Essa decisão é proposital porque a documentação do Rapid SCADA informa credenciais iniciais padrão. Troque as credenciais e defina posteriormente a política de TLS/reverse proxy/firewall antes de qualquer exposição remota.
+Antes da alteração cria backup em `/var/lib/rc-scada-stack`. A operação exige exatamente uma ocorrência de cada opção e recusa configuração ambígua.
 
-O installer não ativa start/stop de gerador, transferência, reset ou setpoints. Esses comandos pertencem à configuração do Rapid SCADA e só devem ser habilitados após HIL específico por modelo/firmware e revisão de interlocks.
+## RC Monitor transacional
 
-## Configuração do Gateway
+`install-rc-monitor.sh` valida a configuração antes da troca. Configurações `rapid-web` destinadas a `/etc` devem usar caminhos absolutos para `profileDir` e `rapidBinding`; caminhos relativos são rejeitados antes do restart.
 
-Para instalar já com uma topologia de teste, crie no kit:
+Se a nova configuração não atingir `/readyz`, o instalador restaura configuração, env e unit anteriores e reinicia o estado anterior. Isso evita deixar o serviço degradado após credencial/config inválida.
+
+## Frontend e Nginx
+
+`install-rc-frontend.sh` não compila Node na VM. O frontend já vem dentro da release. O script:
+
+- exige `frontend/index.html` e bundle JS hashed;
+- usa `/opt/rc-gateway/current/frontend` como document root;
+- mantém `/api`, `/healthz` e `/readyz` no RC Monitor;
+- não publica Rapid Web;
+- usa `no-store` no shell SPA e `public, immutable` por um ano nos assets hashed;
+- instala CSP, `nosniff`, `DENY`, Referrer-Policy e Permissions-Policy;
+- usa `systemctl restart nginx` depois de `nginx -t`;
+- mantém backup e rollback da configuração Nginx.
+
+HSTS não é aplicado pelo installer HTTP. Em produção, TLS/HSTS pertencem ao reverse proxy/terminador TLS aprovado.
+
+## Acceptance do frontend instalado
+
+```bash
+sudo /opt/rc-gateway/current/scripts/rc-frontend-acceptance.sh
+```
+
+O gate valida:
+
+- Rapid Web e RC Monitor em loopback;
+- rotas SPA e deep-link de gerador;
+- API do RC Monitor através do Nginx;
+- POST em API read-only retornando 405;
+- política de cache;
+- headers HTTP;
+- ausência de wildcard exposure em 10008, 18080 e 18100.
+
+Os gates Rapid/Gateway existentes continuam separados:
+
+```bash
+sudo /opt/rc-gateway/current/scripts/vm-acceptance.sh
+sudo RAPID_SCADA_EXPECT_SESSION=0 /opt/rc-gateway/current/scripts/rapid-scada-acceptance.sh
+```
+
+`RAPID_SCADA_EXPECT_SESSION=0` é válido somente quando ainda não existe sessão de campo. Não prova Controller→Gateway.
+
+## Supply chain do frontend
+
+A release exige:
 
 ```text
-rc-gateway.json
+.node-version = 22.23.2
+frontend/package-lock.json (lockfileVersion 3)
+npm ci
 ```
 
-ou informe explicitamente:
+O Gateway CI configura o mesmo Node antes da build reprodutível. A release falha se o runtime Node divergir ou se o lockfile estiver ausente.
 
-```bash
-sudo bash install-scada-stack.sh \
-  --gateway-config /caminho/rc-gateway.json
-```
+## Segurança e limites da evidência
 
-Para a primeira instalação da VM, é aceitável instalar com o baseline seguro sem tunnels e depois substituir `/etc/rc-gateway.json` por um dos perfis homologados.
+Nenhum installer deste fluxo habilita START/STOP/RESET/TEST/TRANSFER/setpoints ou acknowledge. `AllowCommandApi` permanece `false`.
 
-## Dry-run antes da instalação
+A instalação bem-sucedida comprova apenas a stack de software/laboratório. Continuam externos:
 
-Sem alterar o host:
+- relatório real de `SOAK-001` da VM original;
+- `SEM-001` com canais Rapid reais de equipamento;
+- `HIL-001` com primeira controladora real read-only;
+- `HIL-002` modem/VPN/meio físico;
+- TLS e política de exposição de produção;
+- aprovação de `PROD-001`.
 
-```bash
-bash install-scada-stack.sh --dry-run
-```
-
-O dry-run valida o Gateway, o checksum, o package metadata do Rapid SCADA e a configuração candidata do Gateway.
-
-## Pacote Rapid SCADA
-
-Baseline desta fase:
-
-```text
-Rapid SCADA v6.4.7
-```
-
-O pacote oficial Linux pode ser baixado separadamente do site do fornecedor. Depois de extrair o pacote Linux, coloque `rapidscada_6.4.7_all.deb` no diretório do kit.
-
-Para kit de produção, registre o SHA-256 do arquivo de origem de uma das duas formas:
-
-```text
-rapidscada_6.4.7_all.deb.sha256
-```
-
-ou:
-
-```bash
-sudo RC_SCADA_RAPID_SHA256='<64-hex>' bash install-scada-stack.sh
-```
-
-O checksum local protege contra corrupção/substituição do arquivo após o kit ser congelado; ele não substitui a validação da origem do fornecedor.
-
-## Dependências e modo offline
-
-Por padrão, o script usa apenas os repositórios APT **já configurados na VM**. Ele não adiciona repositórios externos automaticamente.
-
-O Rapid SCADA v6.4.7 requer ASP.NET Core Runtime 8.0.x no Linux. Se `aspnetcore-runtime-8.0` não estiver disponível no APT configurado, instale o runtime 8.0 segundo a documentação oficial e execute o installer novamente.
-
-Para impedir qualquer download:
-
-```bash
-sudo bash install-scada-stack.sh --offline
-```
-
-Nesse modo `curl`, `nginx`, `unzip` e ASP.NET Core Runtime 8.0 já precisam existir no host e as dependências do `.deb` Rapid SCADA precisam estar satisfeitas.
-
-## Atualização
-
-Em instalação existente, o script bloqueia por padrão para evitar sobrescrever um SCADA em operação. Depois de backup e janela autorizada:
-
-```bash
-sudo bash install-scada-stack.sh --upgrade
-```
-
-O mecanismo de release do Gateway continua usando instalação health-gated e rollback próprio. Atualizações do Rapid SCADA devem seguir também a política de backup e compatibilidade do projeto Rapid SCADA.
-
-## Nginx já existente
-
-Em VM limpa, o installer substitui apenas o link do site default do Nginx pelo site `rc-scada`.
-
-Se encontrar outros sites habilitados, falha para não modificar uma instalação de terceiros. O override explícito para ambiente conhecido é:
-
-```bash
-sudo RC_SCADA_ALLOW_EXISTING_NGINX=1 bash install-scada-stack.sh
-```
-
-Use isso somente depois de revisar conflitos de portas e proxy.
-
-## Pós-instalação
-
-Confirme:
-
-```bash
-systemctl status rc-gateway.service --no-pager
-systemctl status scadacomm6.service --no-pager
-systemctl status scadaserver6.service --no-pager
-systemctl status scadaweb6.service --no-pager
-curl -fsS http://127.0.0.1:18080/readyz
-curl -fsSL http://127.0.0.1/ >/dev/null
-cat /var/lib/rc-scada-stack/install-state.env
-```
-
-Depois configure a communication line no Rapid SCADA e execute:
-
-```bash
-sudo /opt/rc-gateway/current/scripts/rapid-scada-acceptance.sh
-```
-
-Para o preflight de produção, informe as portas consumer reais do Gateway:
-
-```bash
-sudo RAPID_SCADA_GATEWAY_PORTS='25020' \
-  /opt/rc-gateway/current/scripts/rapid-scada-production-acceptance.sh
-```
-
-A instalação bem-sucedida significa **stack instalado e serviços saudáveis**. O status `production_validated` continua dependendo de VM acceptance, sessão real Rapid SCADA↔Gateway, HIL da controladora/modem/VPN e soak de 24 h/7 dias.
+`PRODUCTION_VALIDATED=false` até que esses gates estejam efetivamente concluídos.
