@@ -72,7 +72,7 @@ Rapid Web usa Auth API habilitada e Command API obrigatoriamente desabilitada. `
 Material validado antes deste handoff:
 
 ```text
-material HEAD: fe51b610d7a6c39f52e09838d6d2fdf263ccaafd
+material HEAD: 83340cb751efcce23bd74a0dfa0d8ed9aeee69b6
 branch: feature/frontend-contract
 Rapid SCADA: 6.4.7-1
 Node: 22.23.2
@@ -95,6 +95,7 @@ Correções descobertas por instalação limpa e agora codificadas:
 - LAB exige sidecar SHA-256 do pacote Rapid e registra o hash efetivamente instalado;
 - release validator deixou de usar pipelines `tar | grep -q` sujeitos a SIGPIPE/141;
 - Gateway CI teve comandos `run:` com quoting YAML inválido corrigidos para blocos; `actionlint` pinado passou no workflow corrigido;
+- `scripts/ci.sh` agora valida configs de Monitor com path absoluto de runtime no contexto equivalente do checkout, sem confundir `/etc`/`/opt` com source tree;
 - binding demo é explicitamente `SIMULATION_TEST_ONLY`; alarme é `SIMULATED_DIGITAL_ALARM`; o stock demo não arquiva eventos, portanto o binding LAB não inventa evento.
 
 Evidência na segunda VM `tes`:
@@ -127,6 +128,7 @@ SIMULATED_DIGITAL_ALARM raise: PASS
 SIMULATED_DIGITAL_ALARM clear: PASS
 /events on stock Rapid demo: [] by design; no fake history inserted
 Gateway CI workflow actionlint after YAML fix: PASS
+Local CI script parity with required tooling: PASS
 ```
 
 Final LAB state records:
