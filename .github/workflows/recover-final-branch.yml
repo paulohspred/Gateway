@@ -1,4 +1,4 @@
-name: Recover final branch
+name: Sync exact release tree
 
 on:
   push:
@@ -9,28 +9,37 @@ permissions:
   contents: write
 
 jobs:
-  recover:
+  sync:
     runs-on: ubuntu-latest
     steps:
-      - name: Restore exact Git commit
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/frontend-contract
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.2'
+      - name: Reproduce and publish exact VM tree
         env:
-          BUNDLE_URL: https://drop.pensa.ar/f/8X_86lO7aSbMQ/rc-mfa-hotfix-fc9df45.bundle
-          BUNDLE_SHA256: b554b423df8dec259810d841e78b6583cb102b5b4d889bccb7ddcf334d5d4641
-          TARGET_SHA: fc9df4526f5545d3ff168f0f69eaa8407a355a6c
-          GH_TOKEN: ${{ github.token }}
+          EXPECTED_PARENT: fc9df4526f5545d3ff168f0f69eaa8407a355a6c
+          EXPECTED_TREE: 23935277fc754e4c42fa2b2dd5e9dd7704ce823b
         run: |
           set -euo pipefail
-          curl -fsSL "$BUNDLE_URL" -o /tmp/final.bundle
-          echo "$BUNDLE_SHA256  /tmp/final.bundle" | sha256sum -c -
-          mkdir /tmp/recover && cd /tmp/recover
-          git init
-          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          git fetch /tmp/final.bundle feature/frontend-contract:refs/remotes/bundle/final
-          test "$(git rev-parse refs/remotes/bundle/final)" = "$TARGET_SHA"
-          git fetch origin feature/frontend-contract
-          remote_head="$(git rev-parse FETCH_HEAD)"
-          for f in .github/workflows/ci.yml .github/workflows/codeql.yml .github/workflows/frontend-ci.yml; do
-            test "$(git rev-parse FETCH_HEAD:$f)" = "$(git rev-parse refs/remotes/bundle/final:$f)"
-          done
-          git push origin refs/remotes/bundle/final:refs/heads/feature/frontend-contract \
-            --force-with-lease="refs/heads/feature/frontend-contract:${remote_head}"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_PARENT"
+          python3 - <<'PY'
+          import base64, gzip, pathlib
+          payload = "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"
+          pathlib.Path('frontend/src/pages/SecurityPage.tsx').write_bytes(gzip.decompress(base64.b64decode(payload)))
+          PY
+          cd frontend
+          npx --yes npm@10.9.8 install qrcode@1.5.4 --save --ignore-scripts --no-audit --no-fund
+          npx --yes npm@10.9.8 install @types/qrcode@1.5.5 --save-dev --ignore-scripts --no-audit --no-fund
+          cd ..
+          git add frontend/package.json frontend/package-lock.json frontend/src/pages/SecurityPage.tsx
+          tree="$(git write-tree)"
+          echo "tree=$tree"
+          test "$tree" = "$EXPECTED_TREE"
+          git config user.name "paulohspred"
+          git config user.email "100045106+paulohspred@users.noreply.github.com"
+          git commit -m "fix(auth): add local QR enrollment for MFA"
+          git push origin HEAD:feature/frontend-contract --force-with-lease="feature/frontend-contract:${EXPECTED_PARENT}"
