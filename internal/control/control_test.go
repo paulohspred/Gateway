@@ -506,3 +506,29 @@ func TestControlPlaneAdministrativeAndEngineeringEndpoints(t *testing.T) {
 		t.Fatalf("telemetry validation should pass: %s", w.Body.String())
 	}
 }
+
+func TestOperatorCanUseDiagnosticsWithoutAdminSystemAccess(t *testing.T) {
+	store, srv := newTestServer(t)
+	operator := User{
+		ID: "usr-operator-diag", Username: "operator-diag", DisplayName: "Operator Diagnostics",
+		Role: RoleOperator, SiteScopes: []string{"*"}, Active: true, SessionVersion: 1,
+		MustChangePassword: false, MFARequired: false, MFAEnabled: false,
+		CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+	}
+	store.mu.Lock()
+	store.state.Users = append(store.state.Users, operator)
+	store.mu.Unlock()
+	sess := Session{Token: "diag-token", CSRF: "diag-csrf", UserID: operator.ID, SessionVersion: 1, ExpiresAt: time.Now().UTC().Add(time.Hour)}
+	srv.mu.Lock()
+	srv.sessions[sess.Token] = sess
+	srv.mu.Unlock()
+	cookie := &http.Cookie{Name: "rc_session", Value: sess.Token}
+	w := request(t, srv, http.MethodGet, "/api/v1/diagnostics/system", nil, cookie, "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("operator diagnostics=%d body=%s", w.Code, w.Body.String())
+	}
+	w = request(t, srv, http.MethodGet, "/api/v1/admin/system", nil, cookie, "")
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("operator admin system=%d body=%s", w.Code, w.Body.String())
+	}
+}

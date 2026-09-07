@@ -8,7 +8,7 @@ import { Topbar } from "../components/Topbar";
 
 export function DiagnosticsPage() {
   const health = useQuery({ queryKey: ["system-health"], queryFn: api.getSystemHealth, refetchInterval: 10_000 });
-  const system = useQuery({ queryKey: ["admin-system", "diagnostics"], queryFn: controlApi.system, refetchInterval: 10_000 });
+  const system = useQuery({ queryKey: ["admin-system", "diagnostics"], queryFn: controlApi.diagnosticsSystem, refetchInterval: 10_000 });
   const fleet = useQuery({ queryKey: ["fleet", "diagnostics"], queryFn: () => getFleetRows(false), refetchInterval: 10_000 });
   const commissionings = useQuery({ queryKey: ["commissionings", "diagnostics"], queryFn: controlApi.commissionings, staleTime: 30_000 });
   const byMonitorId = new Map((commissionings.data ?? []).filter((c) => c.monitorGeneratorId).map((c) => [c.monitorGeneratorId as string, c]));

@@ -949,13 +949,13 @@ func defaultPreferences(settings SystemSettings) UserPreferences {
 }
 
 func validatePreferences(p UserPreferences) error {
-	if p.Language != "pt-BR" && p.Language != "en-US" {
+	if p.Language != "pt-BR" {
 		return errors.New("unsupported language")
 	}
 	if _, err := time.LoadLocation(p.TimeZone); err != nil {
 		return errors.New("invalid time zone")
 	}
-	if p.UnitSystem != "metric" && p.UnitSystem != "imperial" {
+	if p.UnitSystem != "metric" {
 		return errors.New("invalid unit system")
 	}
 	if p.FleetView != "vertical" && p.FleetView != "compact" && p.FleetView != "list" {
@@ -997,7 +997,7 @@ func (s *Store) UpdatePreferences(actor User, p UserPreferences) (UserPreference
 }
 func (s *Store) Settings() SystemSettings { s.mu.Lock(); defer s.mu.Unlock(); return s.state.Settings }
 func (s *Store) UpdateSettings(actor User, in SystemSettings) (SystemSettings, error) {
-	if in.DefaultLanguage != "pt-BR" && in.DefaultLanguage != "en-US" {
+	if in.DefaultLanguage != "pt-BR" {
 		return SystemSettings{}, errors.New("unsupported language")
 	}
 	if _, err := time.LoadLocation(in.DefaultTimeZone); err != nil {

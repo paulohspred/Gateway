@@ -3,13 +3,13 @@ import { ApiError } from "./client";
 
 export const roleSchema = z.enum(["viewer", "operator", "technician", "commissioning_engineer", "administrator", "auditor"]);
 export const preferencesSchema = z.object({
-  language: z.enum(["pt-BR", "en-US"]),
+  language: z.literal("pt-BR"),
   timeZone: z.string().min(1),
-  unitSystem: z.enum(["metric", "imperial"]),
+  unitSystem: z.literal("metric"),
   fleetView: z.enum(["vertical", "compact", "list"])
 });
 export const settingsSchema = z.object({
-  defaultLanguage: z.enum(["pt-BR", "en-US"]),
+  defaultLanguage: z.literal("pt-BR"),
   defaultTimeZone: z.string().min(1),
   defaultFleetView: z.enum(["vertical", "compact", "list"])
 });
@@ -111,6 +111,7 @@ export const controlApi = {
   updateSite: async (csrf: string, id: string, input: unknown) => siteSchema.parse(await request(`/api/v1/admin/sites/${encodeURIComponent(id)}`, { method: "PATCH", body: json(input) }, csrf)),
   audit: async () => z.array(auditSchema).parse(await request("/api/v1/admin/audit?limit=500")),
   sessions: async () => z.array(z.object({ userId: z.string(), expiresAt: z.string(), current: z.boolean() })).parse(await request("/api/v1/admin/sessions")),
+  diagnosticsSystem: async () => z.object({ gateway: z.object({ ready: z.boolean().optional(), operationalState: z.string().optional(), activeSessions: z.number().optional(), apiVersion: z.string().optional() }).nullable().optional(), monitor: z.unknown().nullable().optional() }).parse(await request("/api/v1/diagnostics/system")),
   system: async () => systemInfoSchema.parse(await request("/api/v1/admin/system")),
   settings: async () => settingsSchema.parse(await request("/api/v1/admin/settings")),
   updateSettings: async (csrf: string, input: Settings) => settingsSchema.parse(await request("/api/v1/admin/settings", { method: "PATCH", body: json(input) }, csrf)),

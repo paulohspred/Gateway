@@ -79,6 +79,7 @@ func NewServer(store *Store, opt ServerOptions) (*Server, error) {
 	mux.HandleFunc("/api/v1/auth/mfa/enable", s.auth(PermFleetRead, s.mfaEnable))
 	mux.HandleFunc("/api/v1/auth/preferences", s.auth(PermFleetRead, s.preferences))
 	mux.HandleFunc("/api/v1/system/health", s.auth(PermFleetRead, s.operationProxy))
+	mux.HandleFunc("/api/v1/diagnostics/system", s.auth(PermDiagnosticsRead, s.diagnosticsSystem))
 	mux.HandleFunc("/api/v1/generators", s.auth(PermFleetRead, s.operationProxy))
 	mux.HandleFunc("/api/v1/generators/", s.auth(PermFleetRead, s.operationProxy))
 	mux.HandleFunc("/api/v1/admin/roles", s.auth(PermUsersRead, s.roles))
@@ -711,6 +712,23 @@ func (s *Server) gatewayStatus(ctx context.Context) any {
 	}
 	return payload
 }
+func (s *Server) diagnosticsSystem(w http.ResponseWriter, r *http.Request, u User, sess Session) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET required")
+		return
+	}
+	monitorStatus, monitorBody, _, monitorErr := s.monitorGET(r.Context(), "/api/v1/system/health")
+	gateway := s.gatewayStatus(r.Context())
+	var monitor any
+	if monitorErr == nil && monitorStatus == http.StatusOK {
+		_ = json.Unmarshal(monitorBody, &monitor)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"gateway": gateway,
+		"monitor": monitor,
+	})
+}
+
 func (s *Server) systemInfo(w http.ResponseWriter, r *http.Request, u User, sess Session) {
 	if r.Method != http.MethodGet {
 		writeError(w, 405, "method_not_allowed", "GET required")

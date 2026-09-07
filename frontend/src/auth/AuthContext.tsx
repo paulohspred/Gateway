@@ -1,6 +1,7 @@
 import { createContext,useCallback,useContext,useEffect,useMemo,useState,type ReactNode } from "react";
 import { controlApi,type AuthSession,type PublicUser } from "../api/control";
 import { ApiError } from "../api/client";
+import { setPresentationTimeZone } from "../lib/time";
 
 type AuthContextValue={user:PublicUser|null;csrf:string;loading:boolean;mfaEnrollmentRequired:boolean;login:(username:string,password:string,totp?:string)=>Promise<AuthSession>;logout:()=>Promise<void>;logoutAll:()=>Promise<void>;refresh:()=>Promise<void>;hasPermission:(permission:string)=>boolean};
 const AuthContext=createContext<AuthContextValue|null>(null);
@@ -8,6 +9,7 @@ export function AuthProvider({children}:{children:ReactNode}){
  const [session,setSession]=useState<AuthSession|null>(null);const [loading,setLoading]=useState(true);
  const refresh=useCallback(async()=>{try{setSession(await controlApi.me())}catch(e){if(e instanceof ApiError&&e.status===401)setSession(null);else throw e}finally{setLoading(false)}},[]);
  useEffect(()=>{void refresh()},[refresh]);
+ useEffect(()=>{ const prefs=session?.user.preferences; if(prefs){ setPresentationTimeZone(prefs.timeZone); document.documentElement.lang=prefs.language; } },[session?.user.preferences]);
  const login=useCallback(async(username:string,password:string,totp?:string)=>{const next=await controlApi.login(username,password,totp);setSession(next);return next},[]);
  const logout=useCallback(async()=>{if(session?.csrfToken){try{await controlApi.logout(session.csrfToken)}finally{setSession(null)}}else setSession(null)},[session]);
  const logoutAll=useCallback(async()=>{if(session?.csrfToken){try{await controlApi.logoutAll(session.csrfToken)}finally{setSession(null)}}else setSession(null)},[session]);

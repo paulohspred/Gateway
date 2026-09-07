@@ -1,8 +1,16 @@
+let presentationTimeZone = "America/Sao_Paulo";
+
+export function setPresentationTimeZone(value: string) {
+  try { new Intl.DateTimeFormat("pt-BR", { timeZone: value }).format(new Date()); presentationTimeZone = value; } catch { presentationTimeZone = "America/Sao_Paulo"; }
+}
+
+export function getPresentationTimeZone() { return presentationTimeZone; }
+
 export function formatDateTime(value?: string | null) {
   if (!value) return "N/D";
   const date = new Date(value);
   if (Number.isNaN(date.valueOf())) return "N/D";
-  return new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(date);
+  return new Intl.DateTimeFormat("pt-BR", { timeZone: presentationTimeZone, day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(date);
 }
 
 export function ageLabel(value?: string | null, now = Date.now()) {

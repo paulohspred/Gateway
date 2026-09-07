@@ -2,6 +2,8 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { LayoutGrid, List, Rows3 } from "lucide-react";
 import { getFleetRows } from "../api/fleet";
+import { controlApi } from "../api/control";
+import { useAuth } from "../auth/AuthContext";
 import { FleetTable } from "../components/FleetTable";
 import { GeneratorCompactCard } from "../components/GeneratorCompactCard";
 import { GeneratorVerticalCard } from "../components/GeneratorVerticalCard";
@@ -13,7 +15,9 @@ type FleetFilter = "all" | "online" | "offline" | "alarm";
 
 export function GeneratorsPage() {
   const [query, setQuery] = useState("");
-  const [view, setView] = useState<FleetView>(() => (localStorage.getItem("rc-fleet-view") as FleetView | null) ?? "vertical");
+  const auth = useAuth();
+  const initialView = auth.user?.preferences?.fleetView as FleetView | undefined;
+  const [view, setView] = useState<FleetView>(initialView ?? "vertical");
   const [filter, setFilter] = useState<FleetFilter>("all");
   const fleet = useQuery({ queryKey: ["fleet", "generators"], queryFn: () => getFleetRows(true), refetchInterval: 15_000 });
   const rows = useMemo(() => {
@@ -24,7 +28,11 @@ export function GeneratorsPage() {
       return matchesText && matchesFilter;
     });
   }, [fleet.data, query, filter]);
-  const setFleetView = (next: FleetView) => { setView(next); localStorage.setItem("rc-fleet-view", next); };
+  const setFleetView = (next: FleetView) => {
+    setView(next);
+    const prefs = auth.user?.preferences;
+    if (prefs) void controlApi.updatePreferences(auth.csrf, { ...prefs, fleetView: next }).then(() => auth.refresh()).catch(() => undefined);
+  };
 
   const controls = <div className="fleet-toolbar"><div className="fleet-view-switch" aria-label="Visualização da frota"><button className={view === "vertical" ? "active" : ""} onClick={() => setFleetView("vertical")}><Rows3/>Vertical</button><button className={view === "compact" ? "active" : ""} onClick={() => setFleetView("compact")}><LayoutGrid/>Compacto</button><button className={view === "list" ? "active" : ""} onClick={() => setFleetView("list")}><List/>Lista</button></div><select className="fleet-filter" value={filter} onChange={(e) => setFilter(e.target.value as FleetFilter)}><option value="all">Todos</option><option value="online">Online</option><option value="offline">Offline</option><option value="alarm">Com alarme</option></select><input className="filter-input" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar nome, ID, site ou controladora"/></div>;
 
