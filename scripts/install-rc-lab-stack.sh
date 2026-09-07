@@ -73,8 +73,10 @@ CURRENT="/opt/rc-gateway/current"
 for file in \
   "$CURRENT/scripts/configure-rapid-web-api.sh" \
   "$CURRENT/scripts/install-rc-monitor.sh" \
+  "$CURRENT/scripts/install-rc-admin.sh" \
   "$CURRENT/scripts/install-rc-frontend.sh" \
   "$CURRENT/scripts/rc-frontend-acceptance.sh" \
+  "$CURRENT/scripts/rc-admin-acceptance.sh" \
   "$CURRENT/configs/monitor/rc-monitor.rapid-demo-lab.json"
 do
   [[ -f "$file" ]] || { echo "ERRO: release instalada não contém $file" >&2; exit 4; }
@@ -82,8 +84,10 @@ done
 
 bash "$CURRENT/scripts/configure-rapid-web-api.sh"
 bash "$CURRENT/scripts/install-rc-monitor.sh" "$CURRENT/configs/monitor/rc-monitor.rapid-demo-lab.json" "$RAPID_ENV"
+if [[ -f /var/lib/rc-admin/state.json ]]; then RC_ADMIN_COOKIE_SECURE=false bash "$CURRENT/scripts/install-rc-admin.sh"; else RC_ADMIN_COOKIE_SECURE=false bash "$CURRENT/scripts/install-rc-admin.sh" --lab-generate-bootstrap; fi
 RC_FRONTEND_BIND="$FRONTEND_BIND" bash "$CURRENT/scripts/install-rc-frontend.sh"
 bash "$CURRENT/scripts/rc-frontend-acceptance.sh"
+bash "$CURRENT/scripts/rc-admin-acceptance.sh"
 
 install -d -o root -g root -m 0750 /var/lib/rc-scada-stack
 cat > /var/lib/rc-scada-stack/lab-mode.env <<EOF

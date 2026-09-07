@@ -2,6 +2,15 @@
 set -Eeuo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
+usage(){ cat <<'USAGE'
+Uso: build-release.sh [VERSION]
+
+Variáveis: ARCHES="amd64 arm64", REQUIRE_SBOM=0|1, DIST_DIR, GO_BIN, CYCLONEDX_GOMOD_BIN.
+VERSION deve conter apenas letras, números, ponto, underscore, + ou -.
+USAGE
+}
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then usage; exit 0; fi
+[[ $# -le 1 ]] || { echo "ERRO: argumentos em excesso" >&2; usage >&2; exit 64; }
 VERSION="${1:-${VERSION:-$(git describe --tags --always --dirty 2>/dev/null || git rev-parse --short HEAD)}}"
 VERSION="${VERSION//\//-}"
 [[ "$VERSION" =~ ^[A-Za-z0-9._+-]+$ ]] || { echo "ERRO: versão inválida: $VERSION" >&2; exit 2; }
@@ -94,20 +103,22 @@ for arch in $ARCHES; do
 
   gateway_ldflags="-s -w -X main.version=$VERSION -X main.commit=$COMMIT -X main.buildDate=$BUILD_DATE"
   monitor_ldflags="-s -w -X main.version=$VERSION"
+  admin_ldflags="-s -w -X main.version=$VERSION"
   CGO_ENABLED=0 GOOS=linux GOARCH="$arch" "$GO_BIN" build -trimpath -buildvcs=false -ldflags "$gateway_ldflags" -o "$stage/bin/rc-gateway" ./cmd/rc-gateway
   CGO_ENABLED=0 GOOS=linux GOARCH="$arch" "$GO_BIN" build -trimpath -buildvcs=false -ldflags "$monitor_ldflags" -o "$stage/bin/rc-monitor" ./cmd/rc-monitor
+  CGO_ENABLED=0 GOOS=linux GOARCH="$arch" "$GO_BIN" build -trimpath -buildvcs=false -ldflags "$admin_ldflags" -o "$stage/bin/rc-admin" ./cmd/rc-admin
 
-  cp systemd/rc-gateway.service systemd/rc-monitor.service "$stage/systemd/"
+  cp systemd/rc-gateway.service systemd/rc-monitor.service systemd/rc-admin.service "$stage/systemd/"
   cp configs/*.json "$stage/configs/"
   cp configs/monitor/*.json "$stage/configs/monitor/"
   cp controllers/DRAFT_PROFILES.json controllers/README.md controllers/REFERENCE_CATALOG.md "$stage/controllers/"
   cp -R controllers/rc-simulator "$stage/controllers/"
   cp -R "$FRONTEND_DIR/dist/." "$stage/frontend/"
 
-  cp scripts/install-release.sh scripts/install-scada-stack.sh scripts/install-rc-monitor.sh scripts/install-rc-frontend.sh scripts/install-rc-lab-stack.sh scripts/configure-rapid-web-api.sh scripts/rc-frontend-acceptance.sh scripts/rollback-release.sh scripts/probe-usb-hid.sh scripts/collect-diagnostics.sh scripts/vm-acceptance.sh scripts/run-soak.sh scripts/rapid-scada-acceptance.sh scripts/rapid-scada-production-acceptance.sh "$stage/scripts/"
+  cp scripts/install-release.sh scripts/install-scada-stack.sh scripts/install-rc-monitor.sh scripts/install-rc-admin.sh scripts/install-rc-frontend.sh scripts/install-rc-lab-stack.sh scripts/configure-rapid-web-api.sh scripts/rc-frontend-acceptance.sh scripts/rc-admin-acceptance.sh scripts/rollback-release.sh scripts/probe-usb-hid.sh scripts/collect-diagnostics.sh scripts/vm-acceptance.sh scripts/run-soak.sh scripts/rapid-scada-acceptance.sh scripts/rapid-scada-production-acceptance.sh "$stage/scripts/"
   cp docs/RUNBOOK.md docs/USB_HID_COMAP.md docs/COMPATIBILITY_MATRIX.md docs/PRODUCTION_MATRIX.md docs/VM_ACCEPTANCE.md docs/THREAT_MODEL.md docs/PROFESSIONALIZATION_PLAN.md docs/CONFIGURATION_COMPATIBILITY.md docs/RAPID_SCADA_INTEGRATION.md docs/GENERATOR_SCADA_PRODUCTION_READINESS.md docs/SCADA_STACK_INSTALLER.md docs/RC_MONITOR_OPERATIONS.md docs/RAPID_SCADA_MONITOR_BINDING.md "$stage/docs/"
   cp README.md SECURITY.md SUPPORT.md CHANGELOG.md LICENSE NOTICE THIRD_PARTY_NOTICES.md "$stage/"
-  chmod 0755 "$stage/bin/rc-gateway" "$stage/bin/rc-monitor" "$stage/scripts/"*.sh
+  chmod 0755 "$stage/bin/rc-gateway" "$stage/bin/rc-monitor" "$stage/bin/rc-admin" "$stage/scripts/"*.sh
 
   [[ -f "$stage/frontend/index.html" ]] || { echo "ERRO: frontend não entrou na release $arch" >&2; exit 4; }
   find "$stage/frontend/assets" -maxdepth 1 -type f -name 'index-*.js' -print -quit | grep -q . || { echo "ERRO: assets frontend ausentes na release $arch" >&2; exit 4; }
@@ -124,6 +135,7 @@ for arch in $ARCHES; do
     printf 'product=rc-gateway\n'
     printf 'component=rc-monitor\n'
     printf 'component=rc-monitor-frontend\n'
+    printf 'component=rc-admin\n'
     printf 'license=Proprietary-All-Rights-Reserved\n'
     printf 'version=%s\n' "$VERSION"
     printf 'commit=%s\n' "$COMMIT"

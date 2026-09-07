@@ -46,8 +46,10 @@ mapfile -t roots < <(find "$tmp" -mindepth 1 -maxdepth 1 -print)
 pkg="${roots[0]}"
 [[ -x "$pkg/bin/rc-gateway" ]] || { echo "ERRO: binário rc-gateway ausente/inexecutável." >&2; exit 4; }
 [[ -x "$pkg/bin/rc-monitor" ]] || { echo "ERRO: binário rc-monitor ausente/inexecutável." >&2; exit 4; }
+[[ -x "$pkg/bin/rc-admin" ]] || { echo "ERRO: binário rc-admin ausente/inexecutável." >&2; exit 4; }
 [[ -f "$pkg/systemd/rc-gateway.service" ]] || { echo "ERRO: unit rc-gateway.service ausente." >&2; exit 4; }
 [[ -f "$pkg/systemd/rc-monitor.service" ]] || { echo "ERRO: unit rc-monitor.service ausente." >&2; exit 4; }
+[[ -f "$pkg/systemd/rc-admin.service" ]] || { echo "ERRO: unit rc-admin.service ausente." >&2; exit 4; }
 [[ -f "$pkg/frontend/index.html" ]] || { echo "ERRO: frontend/index.html ausente da release." >&2; exit 4; }
 [[ -d "$pkg/frontend/assets" ]] || { echo "ERRO: frontend/assets ausente da release." >&2; exit 4; }
 find "$pkg/frontend/assets" -maxdepth 1 -type f -name 'index-*.js' -print -quit | grep -q . || { echo "ERRO: bundle frontend hashed ausente da release." >&2; exit 4; }
@@ -58,6 +60,7 @@ done
 grep -qx 'product=rc-gateway' "$pkg/MANIFEST" || { echo "ERRO: MANIFEST não identifica product=rc-gateway." >&2; exit 4; }
 grep -qx 'component=rc-monitor' "$pkg/MANIFEST" || { echo "ERRO: MANIFEST não identifica component=rc-monitor." >&2; exit 4; }
 grep -qx 'component=rc-monitor-frontend' "$pkg/MANIFEST" || { echo "ERRO: MANIFEST não identifica component=rc-monitor-frontend." >&2; exit 4; }
+grep -qx 'component=rc-admin' "$pkg/MANIFEST" || { echo "ERRO: MANIFEST não identifica component=rc-admin." >&2; exit 4; }
 grep -qx 'license=Proprietary-All-Rights-Reserved' "$pkg/MANIFEST" || { echo "ERRO: MANIFEST não identifica a licença proprietária esperada." >&2; exit 4; }
 version="$(tr -d '\r\n' < "$pkg/VERSION")"
 [[ "$version" =~ ^[A-Za-z0-9._+-]+$ ]] || { echo "ERRO: versão insegura: $version" >&2; exit 4; }
@@ -65,6 +68,7 @@ version="$(tr -d '\r\n' < "$pkg/VERSION")"
 "$pkg/bin/rc-gateway" --check-config --config "$CANDIDATE_CONFIG"
 "$pkg/bin/rc-gateway" --version
 "$pkg/bin/rc-monitor" --version
+"$pkg/bin/rc-admin" --version
 if [[ $DRY_RUN -eq 1 ]]; then
   echo "DRY-RUN OK: release=$version sha256=$actual config=$CANDIDATE_CONFIG frontend=present monitor=executable"
   exit 0
@@ -102,9 +106,10 @@ fi
 
 chown -R root:root "$release_dir"
 find "$release_dir" -type d -exec chmod 0755 {} +
-chmod 0755 "$release_dir/bin/rc-gateway" "$release_dir/bin/rc-monitor" "$release_dir/scripts/"*.sh 2>/dev/null || true
-find "$release_dir" -type f ! -path '*/bin/rc-gateway' ! -path '*/bin/rc-monitor' ! -path '*/scripts/*.sh' -exec chmod 0644 {} +
+chmod 0755 "$release_dir/bin/rc-gateway" "$release_dir/bin/rc-monitor" "$release_dir/bin/rc-admin" "$release_dir/scripts/"*.sh 2>/dev/null || true
+find "$release_dir" -type f ! -path '*/bin/rc-gateway' ! -path '*/bin/rc-monitor' ! -path '*/bin/rc-admin' ! -path '*/scripts/*.sh' -exec chmod 0644 {} +
 [[ -x "$release_dir/bin/rc-monitor" ]] || { echo "ERRO: rc-monitor perdeu bit executável durante instalação" >&2; exit 5; }
+[[ -x "$release_dir/bin/rc-admin" ]] || { echo "ERRO: rc-admin perdeu bit executável durante instalação" >&2; exit 5; }
 [[ -r "$release_dir/frontend/index.html" ]] || { echo "ERRO: frontend instalado não é legível" >&2; exit 5; }
 
 old_current=""

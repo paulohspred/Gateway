@@ -31,13 +31,15 @@ require_entry(){
 require_entry '/sbom\.cdx\.json$' 'SBOM'
 require_entry '/bin/rc-gateway$' 'rc-gateway'
 require_entry '/bin/rc-monitor$' 'rc-monitor'
+require_entry '/bin/rc-admin$' 'rc-admin'
 require_entry '/frontend/index\.html$' 'frontend/index.html'
 require_entry '/frontend/assets/index-[A-Za-z0-9_-]+\.js$' 'frontend hashed JavaScript'
 require_entry '/systemd/rc-gateway\.service$' 'rc-gateway.service'
 require_entry '/systemd/rc-monitor\.service$' 'rc-monitor.service'
+require_entry '/systemd/rc-admin\.service$' 'rc-admin.service'
 for script in \
-  install-release.sh install-scada-stack.sh install-rc-monitor.sh install-rc-frontend.sh \
-  install-rc-lab-stack.sh configure-rapid-web-api.sh rc-frontend-acceptance.sh rollback-release.sh \
+  install-release.sh install-scada-stack.sh install-rc-monitor.sh install-rc-admin.sh install-rc-frontend.sh \
+  install-rc-lab-stack.sh configure-rapid-web-api.sh rc-frontend-acceptance.sh rc-admin-acceptance.sh rollback-release.sh \
   probe-usb-hid.sh collect-diagnostics.sh vm-acceptance.sh rapid-scada-acceptance.sh \
   rapid-scada-production-acceptance.sh
 do
@@ -74,6 +76,7 @@ for line in \
   'product=rc-gateway' \
   'component=rc-monitor' \
   'component=rc-monitor-frontend' \
+  'component=rc-admin' \
   'license=Proprietary-All-Rights-Reserved'
 do
   grep -Fqx "$line" "$tmp/MANIFEST" || { echo "ERRO: MANIFEST ausente: $line" >&2; exit 4; }

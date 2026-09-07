@@ -8,6 +8,7 @@ NGINX_LINK="${RC_FRONTEND_NGINX_LINK:-/etc/nginx/sites-enabled/rc-scada}"
 STATE_DIR="${RC_SCADA_STATE_DIR:-/var/lib/rc-scada-stack}"
 BIND="${RC_FRONTEND_BIND:-127.0.0.1:80}"
 MONITOR="${RC_MONITOR_UPSTREAM:-127.0.0.1:18100}"
+ADMIN="${RC_ADMIN_UPSTREAM:-127.0.0.1:18110}"
 DRY_RUN=0
 
 if [[ "${1:-}" == "--dry-run" ]]; then
@@ -21,13 +22,14 @@ case "$BIND" in
   *) echo "ERRO: RC_FRONTEND_BIND suportado: 127.0.0.1:80 ou 0.0.0.0:80" >&2; exit 64 ;;
 esac
 [[ "$MONITOR" =~ ^127\.0\.0\.1:[0-9]{1,5}$ ]] || { echo "ERRO: RC_MONITOR_UPSTREAM deve permanecer em loopback IPv4" >&2; exit 64; }
+[[ "$ADMIN" =~ ^127\.0\.0\.1:[0-9]{1,5}$ ]] || { echo "ERRO: RC_ADMIN_UPSTREAM deve permanecer em loopback IPv4" >&2; exit 64; }
 
 [[ -f "$FRONTEND_ROOT/index.html" ]] || { echo "ERRO: frontend de release ausente: $FRONTEND_ROOT/index.html" >&2; exit 4; }
 [[ -d "$FRONTEND_ROOT/assets" ]] || { echo "ERRO: diretório de assets ausente: $FRONTEND_ROOT/assets" >&2; exit 4; }
 find "$FRONTEND_ROOT/assets" -maxdepth 1 -type f -name 'index-*.js' -print -quit | grep -q . || { echo "ERRO: bundle JavaScript hashed ausente" >&2; exit 4; }
 
 if [[ $DRY_RUN -eq 1 ]]; then
-  echo "DRY-RUN OK: frontend=$FRONTEND_ROOT bind=$BIND monitor=$MONITOR"
+  echo "DRY-RUN OK: frontend=$FRONTEND_ROOT bind=$BIND monitor=$MONITOR admin=$ADMIN"
   exit 0
 fi
 
@@ -36,6 +38,7 @@ for cmd in nginx systemctl curl find; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "ERRO: comando obrigatório ausente: $cmd" >&2; exit 69; }
 done
 curl -fsS --max-time 3 "http://$MONITOR/healthz" >/dev/null || { echo "ERRO: RC Monitor não responde em http://$MONITOR/healthz" >&2; exit 5; }
+curl -fsS --max-time 3 "http://$ADMIN/healthz" >/dev/null || { echo "ERRO: RC Admin não responde em http://$ADMIN/healthz" >&2; exit 5; }
 
 install -d -o root -g root -m 0750 "$STATE_DIR/nginx-backups"
 install -d -o root -g root -m 0755 "$(dirname "$NGINX_SITE")" "$(dirname "$NGINX_LINK")"
@@ -90,8 +93,35 @@ $listen_block
         proxy_set_header X-Forwarded-Proto \$scheme;
     }
 
+    location ^~ /api/v1/auth/ {
+        proxy_pass http://$ADMIN;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    location ^~ /api/v1/admin/ {
+        proxy_pass http://$ADMIN;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    location ^~ /api/v1/engineering/ {
+        proxy_pass http://$ADMIN;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
     location /api/ {
-        proxy_pass http://$MONITOR;
+        proxy_pass http://$ADMIN;
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
@@ -152,4 +182,4 @@ done
 trap - ERR
 trap cleanup EXIT
 
-echo "INSTALL RC FRONTEND OK: root=$FRONTEND_ROOT bind=$BIND api=http://$MONITOR"
+echo "INSTALL RC FRONTEND OK: root=$FRONTEND_ROOT bind=$BIND monitor=http://$MONITOR admin=http://$ADMIN"

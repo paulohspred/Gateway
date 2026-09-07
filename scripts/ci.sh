@@ -32,7 +32,10 @@ bash scripts/check-coverage.sh coverage.out
 go test -race ./... -count=1
 go build -trimpath ./cmd/rc-gateway
 go build -trimpath ./cmd/rc-monitor
+go build -trimpath ./cmd/rc-admin
 ./rc-monitor --version
+./rc-admin --version
+./rc-admin --check-config --bind 127.0.0.1:18110 --state /tmp/rc-admin-ci-state.json
 
 for cfg in configs/*.json; do
   ./rc-gateway --check-config --config "$cfg"
@@ -44,7 +47,7 @@ done
 # the checkout by translating only the canonical installed prefix to this repo.
 repo_root="$(pwd)"
 tmp_monitor_cfg="$(mktemp)"
-cleanup(){ rm -f "$tmp_monitor_cfg" rc-gateway rc-monitor coverage.out; }
+cleanup(){ rm -f "$tmp_monitor_cfg" rc-gateway rc-monitor rc-admin coverage.out /tmp/rc-admin-ci-state.json; }
 trap cleanup EXIT
 for cfg in configs/monitor/*.json; do
   if grep -Fq '/opt/rc-gateway/current/' "$cfg"; then
