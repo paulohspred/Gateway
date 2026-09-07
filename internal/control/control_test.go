@@ -450,6 +450,19 @@ func TestControlPlaneAdministrativeAndEngineeringEndpoints(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(bindingDir, "channels.json"), []byte(`{"profileId":"profile-a","metrics":[{"key":"engine.rpm","channelNumber":101}],"alarms":[],"events":[]}`), 0600); err != nil {
 		t.Fatal(err)
 	}
+	simulatorDir := filepath.Join(root, "rc-simulator", "reference-controller")
+	if err := os.MkdirAll(simulatorDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	for name, content := range map[string]string{
+		"manifest.json":  `{"id":"rc-simulator.reference-controller","manufacturer":"RC Simulator","model":"Reference Controller","displayName":"RC Simulator Reference Controller","status":"synthetic"}`,
+		"telemetry.json": `{"profileId":"rc-simulator.reference-controller","metrics":[{"key":"engine.rpm"},{"key":"generator.frequency"}]}`,
+		"alarms.json":    `{"profileId":"rc-simulator.reference-controller","alarms":[{"code":"SIMULATED_DIGITAL_ALARM","severity":"warning","message":"Synthetic LAB alarm"}]}`,
+	} {
+		if err := os.WriteFile(filepath.Join(simulatorDir, name), []byte(content), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	var siteID string
 	monitor := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -525,7 +538,10 @@ func TestControlPlaneAdministrativeAndEngineeringEndpoints(t *testing.T) {
 	assertStatus(http.MethodPatch, "/api/v1/admin/settings", map[string]any{"defaultLanguage": "pt-BR", "defaultTimeZone": "UTC", "defaultFleetView": "compact"}, http.StatusOK)
 	assertStatus(http.MethodGet, "/api/v1/engineering/profile-states", nil, http.StatusOK)
 	assertStatus(http.MethodPatch, "/api/v1/engineering/profile-states/profile-a", map[string]any{"status": "LAB", "version": "1", "evidence": "lab test"}, http.StatusOK)
-	assertStatus(http.MethodGet, "/api/v1/engineering/profiles", nil, http.StatusOK)
+	w = assertStatus(http.MethodGet, "/api/v1/engineering/profiles", nil, http.StatusOK)
+	if !bytes.Contains(w.Body.Bytes(), []byte(`"rc-simulator.reference-controller"`)) {
+		t.Fatalf("synthetic LAB profile missing from engineering catalog: %s", w.Body.String())
+	}
 	assertStatus(http.MethodGet, "/api/v1/engineering/bindings", nil, http.StatusOK)
 	assertStatus(http.MethodGet, "/api/v1/engineering/monitor-generators", nil, http.StatusOK)
 

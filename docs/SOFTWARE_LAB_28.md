@@ -23,11 +23,11 @@ Esta matriz acompanha a conclusão desta rodada. `PASS_CODE` significa implement
 | 17 | Diagnóstico e Saúde do Sistema | PASS_CODE | PENDING_TES | Controller→transport→Gateway→Rapid→Monitor→gerador e sessões autorizadas. |
 | 18 | Configurações + Sobre/Versões | PASS_CODE | PENDING_TES | Preferências/padrões e Manifest/versões reais. |
 | 19 | Commissioning Queue | PASS_CODE | PENDING_TES | Busca/filtros lifecycle/gates; DRAFT fora da Operação. |
-| 20 | Wizard Adicionar Gerador | PASS_CODE | PENDING_TES | Ativo, controller/ECU, transporte, Rapid plan e monitorGeneratorId. |
+| 20 | Wizard Adicionar Gerador | PASS_CODE | PENDING_TES | Ativo, controller/ECU, transporte, Rapid plan, monitorGeneratorId e profile sintético do LAB presente no catálogo de Engenharia. |
 | 21 | Edição e imutabilidade de revisão | PASS_CODE | PENDING_TES | Edição apenas DRAFT; commissioned requer Change Commissioning. |
 | 22 | Preflight automatizado | PASS_CODE | PENDING_TES | Estrutura, site, TCP reachability, profile lifecycle e RC Monitor/capabilities. |
 | 23 | Validação automática de telemetria required | PASS_CODE | PENDING_TES | Online + required presentes + quality=good; gate não aceita PASS manual. |
-| 24 | Profiles lifecycle | PASS_CODE | PENDING_TES | DRAFT/LAB/HIL_VALIDATED/HOMOLOGATED/DEPRECATED; HIL/HOMOLOGATED exigem evidência. |
+| 24 | Profiles lifecycle | PASS_CODE | PENDING_TES | DRAFT/LAB/HIL_VALIDATED/HOMOLOGATED/DEPRECATED; HIL/HOMOLOGATED exigem evidência; simulator é agregado factual e permanece separado das famílias físicas DRAFT. |
 | 25 | Rapid / Bindings seguro | PASS_CODE | PENDING_TES | cnlNum→MetricKey; sem registrador físico no browser. |
 | 26 | Rapid plan staging/apply/rollback | PASS_CODE | PENDING_TES | Ferramenta privilegiada fora do browser; checksum, snapshot, rollback e Command API false. |
 | 27 | Promoção/lifecycle/Change + pacote de evidências | PASS_CODE | PENDING_TES | 8 gates, profile canônico, promote/suspend/retire/supersede e export factual. |

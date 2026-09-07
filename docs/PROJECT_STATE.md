@@ -177,6 +177,8 @@ Capabilities e histórico estão conectados ao backend real. A HMI distingue `AB
 
 A matriz de fechamento dos 28 itens software/LAB está em `docs/SOFTWARE_LAB_28.md`.
 
+O catálogo de Engenharia agrega também o pacote factual `rc-simulator.reference-controller` diretamente de `controllers/rc-simulator/reference-controller/{manifest,telemetry,alarms}.json`; ele não é inserido nas nove famílias físicas de `DRAFT_PROFILES.json`. Isso permite o commissioning LAB do `gen-sim-001` com o mesmo `profileId` informado por `/capabilities`, sem sugerir HIL/homologação.
+
 ## Política de controladoras
 
 GenMon é referência funcional/factual clean-room, não fonte para copiar código/JSON. `controllers/DRAFT_PROFILES.json` contém vocabulário RC; endereços/FC/encoding reais permanecem no Rapid SCADA e só são promovidos com documentação permitida e/ou HIL. Primeira homologação de controladora real continua read-only.

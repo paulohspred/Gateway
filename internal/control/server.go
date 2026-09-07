@@ -938,18 +938,118 @@ func (s *Server) engineeringMonitorGenerators(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, filtered)
 }
 
+type engineeringAlarmDefinition struct {
+	Code     string `json:"code"`
+	Severity string `json:"severity"`
+	Message  string `json:"message"`
+}
+
+type engineeringProfileView struct {
+	ID           string                       `json:"id"`
+	Manufacturer string                       `json:"manufacturer"`
+	Model        string                       `json:"model"`
+	DisplayName  string                       `json:"displayName"`
+	Metrics      []string                     `json:"metrics"`
+	Alarms       []engineeringAlarmDefinition `json:"alarms"`
+}
+
+type engineeringProfileCatalog struct {
+	Schema   int                      `json:"schema"`
+	Profiles []engineeringProfileView `json:"profiles"`
+}
+
+func (s *Server) loadEngineeringProfiles() (engineeringProfileCatalog, error) {
+	data, err := os.ReadFile(s.opt.ProfileCatalogPath)
+	if err != nil {
+		return engineeringProfileCatalog{}, err
+	}
+	var catalog engineeringProfileCatalog
+	if err := json.Unmarshal(data, &catalog); err != nil {
+		return engineeringProfileCatalog{}, err
+	}
+	if catalog.Schema <= 0 || catalog.Profiles == nil {
+		return engineeringProfileCatalog{}, errors.New("invalid engineering profile catalog")
+	}
+
+	// The simulator is a real software/LAB profile package, but intentionally is
+	// not part of DRAFT_PROFILES.json (which tracks physical controller families).
+	// Merge it from its authoritative package files when that package is present.
+	simulatorRoot := filepath.Join(s.opt.BindingRoot, "rc-simulator", "reference-controller")
+	manifestPath := filepath.Join(simulatorRoot, "manifest.json")
+	manifestData, err := os.ReadFile(manifestPath)
+	if errors.Is(err, os.ErrNotExist) {
+		return catalog, nil
+	}
+	if err != nil {
+		return engineeringProfileCatalog{}, err
+	}
+	var manifest struct {
+		ID           string `json:"id"`
+		Manufacturer string `json:"manufacturer"`
+		Model        string `json:"model"`
+		DisplayName  string `json:"displayName"`
+		Status       string `json:"status"`
+	}
+	if err := json.Unmarshal(manifestData, &manifest); err != nil {
+		return engineeringProfileCatalog{}, err
+	}
+	if manifest.ID == "" || manifest.Manufacturer == "" || manifest.Model == "" || manifest.DisplayName == "" || manifest.Status != "synthetic" {
+		return engineeringProfileCatalog{}, errors.New("invalid synthetic engineering profile manifest")
+	}
+	for _, profile := range catalog.Profiles {
+		if profile.ID == manifest.ID {
+			return catalog, nil
+		}
+	}
+
+	telemetryData, err := os.ReadFile(filepath.Join(simulatorRoot, "telemetry.json"))
+	if err != nil {
+		return engineeringProfileCatalog{}, err
+	}
+	var telemetry struct {
+		ProfileID string `json:"profileId"`
+		Metrics   []struct {
+			Key string `json:"key"`
+		} `json:"metrics"`
+	}
+	if err := json.Unmarshal(telemetryData, &telemetry); err != nil {
+		return engineeringProfileCatalog{}, err
+	}
+	alarmsData, err := os.ReadFile(filepath.Join(simulatorRoot, "alarms.json"))
+	if err != nil {
+		return engineeringProfileCatalog{}, err
+	}
+	var alarms struct {
+		ProfileID string                       `json:"profileId"`
+		Alarms    []engineeringAlarmDefinition `json:"alarms"`
+	}
+	if err := json.Unmarshal(alarmsData, &alarms); err != nil {
+		return engineeringProfileCatalog{}, err
+	}
+	if telemetry.ProfileID != manifest.ID || alarms.ProfileID != manifest.ID || len(telemetry.Metrics) == 0 {
+		return engineeringProfileCatalog{}, errors.New("synthetic engineering profile package mismatch")
+	}
+	metrics := make([]string, 0, len(telemetry.Metrics))
+	for _, metric := range telemetry.Metrics {
+		if strings.TrimSpace(metric.Key) == "" {
+			return engineeringProfileCatalog{}, errors.New("synthetic engineering profile contains empty metric key")
+		}
+		metrics = append(metrics, metric.Key)
+	}
+	catalog.Profiles = append(catalog.Profiles, engineeringProfileView{
+		ID: manifest.ID, Manufacturer: manifest.Manufacturer, Model: manifest.Model,
+		DisplayName: manifest.DisplayName, Metrics: metrics, Alarms: alarms.Alarms,
+	})
+	return catalog, nil
+}
+
 func (s *Server) profiles(w http.ResponseWriter, r *http.Request, u User, sess Session) {
 	if r.Method != http.MethodGet {
 		writeError(w, 405, "method_not_allowed", "GET required")
 		return
 	}
-	data, err := os.ReadFile(s.opt.ProfileCatalogPath)
+	payload, err := s.loadEngineeringProfiles()
 	if err != nil {
-		writeError(w, 503, "profile_catalog_unavailable", "profile catalog unavailable")
-		return
-	}
-	var payload any
-	if err := json.Unmarshal(data, &payload); err != nil {
 		writeError(w, 500, "profile_catalog_invalid", "profile catalog is invalid")
 		return
 	}
