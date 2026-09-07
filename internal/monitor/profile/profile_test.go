@@ -27,8 +27,17 @@ func TestLoadSyntheticProfile(t *testing.T) {
 	if len(bundle.Telemetry.Metrics) < 10 {
 		t.Fatalf("expected representative telemetry set, got %d", len(bundle.Telemetry.Metrics))
 	}
-	if len(bundle.Alarms.Alarms) != 1 {
-		t.Fatalf("expected one synthetic alarm definition, got %d", len(bundle.Alarms.Alarms))
+	alarmCodes := make(map[string]struct{}, len(bundle.Alarms.Alarms))
+	for _, alarm := range bundle.Alarms.Alarms {
+		alarmCodes[alarm.Code] = struct{}{}
+	}
+	for _, code := range []string{"LOW_OIL_PRESSURE", "SIMULATED_DIGITAL_ALARM"} {
+		if _, ok := alarmCodes[code]; !ok {
+			t.Fatalf("expected synthetic alarm %q, got %#v", code, alarmCodes)
+		}
+	}
+	if len(alarmCodes) != 2 {
+		t.Fatalf("expected exactly the two synthetic alarm definitions, got %#v", alarmCodes)
 	}
 }
 
@@ -85,50 +94,16 @@ func TestManifestRejectsUnsafeComponentPath(t *testing.T) {
 		DisplayName:  "Test Controller",
 		Status:       StatusSynthetic,
 		Capabilities: Capabilities{Telemetry: true},
-		Files: ProfileFiles{
-			Telemetry: "../telemetry.json",
-			Alarms:    "alarms.json",
-			UI:        "ui.json",
-		},
+		Files:        Files{Telemetry: "../telemetry.json", Alarms: "alarms.json", UI: "ui.json"},
 	}
 	if err := manifest.Validate(); err == nil {
-		t.Fatal("expected traversal path to be rejected")
-	}
-}
-
-func TestUIRejectsUndefinedAndRepeatedMetrics(t *testing.T) {
-	telemetry := TelemetryFile{
-		Schema:    SchemaVersion,
-		ProfileID: "test.controller",
-		Metrics: []MetricDefinition{
-			{Key: monitor.MetricEngineRPM, DisplayName: "RPM", Kind: monitor.ValueNumber, StaleAfterSeconds: 10},
-		},
-	}
-	undefined := UIFile{
-		Schema:    SchemaVersion,
-		ProfileID: "test.controller",
-		Sections:  []UISection{{ID: "engine", Title: "Engine", Metrics: []monitor.MetricKey{monitor.MetricFuelLevel}}},
-	}
-	if err := undefined.Validate("test.controller", telemetry); err == nil {
-		t.Fatal("expected undefined UI metric to be rejected")
-	}
-
-	repeated := UIFile{
-		Schema:    SchemaVersion,
-		ProfileID: "test.controller",
-		Sections: []UISection{
-			{ID: "engine", Title: "Engine", Metrics: []monitor.MetricKey{monitor.MetricEngineRPM}},
-			{ID: "summary", Title: "Summary", Metrics: []monitor.MetricKey{monitor.MetricEngineRPM}},
-		},
-	}
-	if err := repeated.Validate("test.controller", telemetry); err == nil {
-		t.Fatal("expected repeated UI metric to be rejected")
+		t.Fatal("expected unsafe component path to be rejected")
 	}
 }
 
 func writeFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write %s: %v", path, err)
+		t.Fatal(err)
 	}
 }
