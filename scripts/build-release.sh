@@ -56,7 +56,7 @@ for arch in $ARCHES; do
   cp -R controllers/rc-simulator "$stage/controllers/"
   cp -R "$FRONTEND_DIR/dist/." "$stage/frontend/"
 
-  cp scripts/install-release.sh scripts/install-scada-stack.sh scripts/install-rc-monitor.sh scripts/install-rc-frontend.sh scripts/configure-rapid-web-api.sh scripts/rc-frontend-acceptance.sh scripts/rollback-release.sh scripts/probe-usb-hid.sh scripts/collect-diagnostics.sh scripts/vm-acceptance.sh scripts/run-soak.sh scripts/rapid-scada-acceptance.sh scripts/rapid-scada-production-acceptance.sh "$stage/scripts/"
+  cp scripts/install-release.sh scripts/install-scada-stack.sh scripts/install-rc-monitor.sh scripts/install-rc-frontend.sh scripts/install-rc-lab-stack.sh scripts/configure-rapid-web-api.sh scripts/rc-frontend-acceptance.sh scripts/rollback-release.sh scripts/probe-usb-hid.sh scripts/collect-diagnostics.sh scripts/vm-acceptance.sh scripts/run-soak.sh scripts/rapid-scada-acceptance.sh scripts/rapid-scada-production-acceptance.sh "$stage/scripts/"
   cp docs/RUNBOOK.md docs/USB_HID_COMAP.md docs/COMPATIBILITY_MATRIX.md docs/PRODUCTION_MATRIX.md docs/VM_ACCEPTANCE.md docs/THREAT_MODEL.md docs/PROFESSIONALIZATION_PLAN.md docs/CONFIGURATION_COMPATIBILITY.md docs/RAPID_SCADA_INTEGRATION.md docs/GENERATOR_SCADA_PRODUCTION_READINESS.md docs/SCADA_STACK_INSTALLER.md docs/RC_MONITOR_OPERATIONS.md docs/RAPID_SCADA_MONITOR_BINDING.md "$stage/docs/"
   cp README.md SECURITY.md SUPPORT.md CHANGELOG.md LICENSE NOTICE THIRD_PARTY_NOTICES.md "$stage/"
   chmod 0755 "$stage/bin/rc-gateway" "$stage/bin/rc-monitor" "$stage/scripts/"*.sh
@@ -106,6 +106,7 @@ done
 # Standalone deployment kit files. Rapid SCADA itself remains a third-party package
 # and is intentionally not embedded in the proprietary Gateway artifact.
 cp scripts/install-scada-stack.sh "$DIST_DIR/install-scada-stack.sh"
+cp scripts/install-rc-lab-stack.sh "$DIST_DIR/install-rc-lab-stack.sh"
 cp configs/scada-stack.safe.example.json "$DIST_DIR/rc-gateway.safe.json"
 cp docs/SCADA_STACK_INSTALLER.md "$DIST_DIR/SCADA_STACK_INSTALLER.md"
-chmod 0755 "$DIST_DIR/install-scada-stack.sh"
+chmod 0755 "$DIST_DIR/install-scada-stack.sh" "$DIST_DIR/install-rc-lab-stack.sh"
