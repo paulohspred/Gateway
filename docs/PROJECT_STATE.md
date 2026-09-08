@@ -268,7 +268,7 @@ GenMon é referência funcional/factual clean-room, não fonte para copiar códi
 | VM-007 | DONE | Cold boot pós-non-root. |
 | HARD-001 | DONE | Installer ScadaComm non-root least-privilege. |
 | SOAK-001 | TODO | Janela terminou; localizar e verificar relatório real antes de tocar a VM original. |
-| SEM-001 | TODO | Binding semântico com canais Rapid reais, não demo. |
+| SEM-001 | NEXT | Binding semântico com canais Rapid reais, não demo. |
 | MON-001 | DONE | Foundation. |
 | MON-002 | DONE | API read-only. |
 | MON-003 | DONE | Profiles. |
