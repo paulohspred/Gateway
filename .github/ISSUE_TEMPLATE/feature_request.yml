@@ -1,0 +1,33 @@
+name: Feature request
+description: Propose a transport, operational or reliability improvement
+title: "[feature] "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: "The core is bridge-first. Protocol polling, register maps, historian and generic command-plane behavior require a separate architectural justification and normally belong outside the core."
+  - type: textarea
+    id: problem
+    attributes:
+      label: Operational problem
+      description: What field or deployment problem needs to be solved?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed capability
+    validations:
+      required: true
+  - type: textarea
+    id: boundaries
+    attributes:
+      label: Transport / security / resource boundaries
+      description: Identify listeners, privileges, writes/transmits, resource limits and compatibility impact.
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation plan
+      description: Include software tests and any VM/HIL/soak required.

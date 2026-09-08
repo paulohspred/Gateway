@@ -1,0 +1,19 @@
+{
+  "schema": 3,
+  "nodeId": "rc-gateway-comap-usb",
+  "admin": {"bind": "127.0.0.1:18080"},
+  "security": {
+    "requireAllowlist": true,
+    "commandPlaneEnabled": false
+  },
+  "usbHidProviders": [
+    {
+      "id": "comap-il4-amf9-usb",
+      "socket": "/run/rc-gateway/comap-il4-amf9.hid.sock",
+      "device": "/dev/hidraw0",
+      "maxReportBytes": 4096,
+      "allowWrite": false
+    }
+  ],
+  "tunnels": []
+}

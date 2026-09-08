@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "profileId": "rc-simulator.reference-controller",
+  "metrics": [
+    {"key":"engine.rpm","displayName":"Engine RPM","kind":"number","unit":"rpm","required":true,"staleAfterSeconds":10},
+    {"key":"engine.oil_pressure","displayName":"Oil Pressure","kind":"number","unit":"bar","required":false,"staleAfterSeconds":10},
+    {"key":"engine.coolant_temperature","displayName":"Coolant Temperature","kind":"number","unit":"C","required":false,"staleAfterSeconds":10},
+    {"key":"engine.run_hours","displayName":"Run Hours","kind":"number","unit":"h","required":false,"staleAfterSeconds":300},
+    {"key":"generator.voltage_l1","displayName":"Generator Voltage L1","kind":"number","unit":"V","required":true,"staleAfterSeconds":10},
+    {"key":"generator.voltage_l2","displayName":"Generator Voltage L2","kind":"number","unit":"V","required":false,"staleAfterSeconds":10},
+    {"key":"generator.voltage_l3","displayName":"Generator Voltage L3","kind":"number","unit":"V","required":false,"staleAfterSeconds":10},
+    {"key":"generator.frequency","displayName":"Generator Frequency","kind":"number","unit":"Hz","required":true,"staleAfterSeconds":10},
+    {"key":"generator.power_kw","displayName":"Active Power","kind":"number","unit":"kW","required":false,"staleAfterSeconds":10},
+    {"key":"generator.power_factor","displayName":"Power Factor","kind":"number","required":false,"staleAfterSeconds":10},
+    {"key":"battery.voltage","displayName":"Battery Voltage","kind":"number","unit":"V","required":false,"staleAfterSeconds":30},
+    {"key":"controller.mode","displayName":"Controller Mode","kind":"text","required":false,"staleAfterSeconds":10},
+    {"key":"breaker.gcb","displayName":"Generator Circuit Breaker","kind":"boolean","required":false,"staleAfterSeconds":10},
+    {"key":"fuel.level","displayName":"Fuel Level","kind":"number","unit":"%","required":false,"staleAfterSeconds":60}
+  ]
+}

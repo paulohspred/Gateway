@@ -1,0 +1,1 @@
+import { Link } from "react-router-dom";export function ForbiddenPage(){return <main className="center-state"><h1>403</h1><p>Seu perfil não possui permissão para esta área.</p><Link to="/">Voltar à operação</Link></main>}

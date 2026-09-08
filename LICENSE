@@ -1,0 +1,61 @@
+RC UNIVERSAL GATEWAY — PROPRIETARY LICENSE
+Version 1.0 — 2026-09-05
+
+Copyright (c) 2026 paulohspred. All Rights Reserved.
+
+NO LICENSE GRANT
+
+The source code, binaries, documentation, configuration examples, build scripts,
+artifacts, and other original materials in this repository are proprietary.
+Their publication or availability in a public repository does not grant any
+license or permission to use them.
+
+Except where a right cannot lawfully be excluded under applicable law, no
+person or entity may, without prior express written permission from the
+copyright holder:
+
+- use or execute the Software for any purpose;
+- copy, reproduce, download for reuse, mirror, archive for reuse, or otherwise
+  retain copies beyond what is technically necessary to view the repository;
+- modify, adapt, translate, port, compile, create derivative works from, or
+  incorporate any part of the Software into another work or system;
+- distribute, publish, transmit, sublicense, sell, rent, lease, lend, host,
+  provide as a service, or otherwise make the Software or derivatives available
+  to any third party;
+- use the Software or any portion of it for commercial, internal business,
+  educational, research, benchmarking, competitive analysis, model training,
+  code-generation training, or production purposes;
+- remove or alter copyright, proprietary, attribution, security, or licensing
+  notices; or
+- exercise any patent, trademark, trade-secret, or other intellectual-property
+  right associated with the Software by implication, estoppel, exhaustion, or
+  otherwise.
+
+WRITTEN PERMISSION
+
+Any permission must be granted expressly in writing by the copyright holder and
+may be subject to separate commercial or contractual terms. Silence, repository
+visibility, access to source code, issue participation, pull-request activity,
+or possession of a copy does not constitute permission.
+
+THIRD-PARTY MATERIALS
+
+This proprietary notice applies only to original RC Universal Gateway material.
+Third-party components retain their own licenses and copyright notices. Those
+notices are identified in THIRD_PARTY_NOTICES.md and/or the generated SBOM.
+Nothing in this license restricts rights that a third-party licensor directly
+grants under its own license.
+
+NO WARRANTY
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE SOFTWARE IS PROVIDED
+"AS IS" AND "AS AVAILABLE", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+INCLUDING WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE,
+NON-INFRINGEMENT, ACCURACY, RELIABILITY, SAFETY, OR FITNESS FOR INDUSTRIAL OR
+SAFETY-CRITICAL USE. THE COPYRIGHT HOLDER SHALL NOT BE LIABLE FOR ANY DIRECT,
+INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, CONSEQUENTIAL, OR OTHER DAMAGES
+ARISING FROM ACCESS TO, POSSESSION OF, OR USE OF THE SOFTWARE.
+
+RESERVATION OF RIGHTS
+
+All rights not expressly granted in a separate written agreement are reserved.

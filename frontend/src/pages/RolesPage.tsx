@@ -1,0 +1,7 @@
+import { useQuery } from "@tanstack/react-query";
+import { controlApi } from "../api/control";
+import { Panel } from "../components/Panel";
+import { Topbar } from "../components/Topbar";
+const labels:Record<string,string>={viewer:"Viewer",operator:"Operator",technician:"Technician",commissioning_engineer:"Commissioning Engineer",administrator:"Administrator",auditor:"Auditor"};
+const all=["fleet.read","alarms.read","events.read","diagnostics.read","commissioning.read","commissioning.write","commissioning.promote","users.read","users.write","sites.read","sites.write","audit.read","system.read","settings.read","settings.write"];
+export function RolesPage(){const q=useQuery({queryKey:["roles"],queryFn:controlApi.roles});return <><Topbar title="Perfis e Permissões" subtitle="Matriz RBAC efetiva no backend" onRefresh={()=>void q.refetch()} refreshing={q.isFetching}/><div className="content-grid"><Panel title="Matriz de autorização"><div className="table-wrap"><table className="data-table permission-matrix"><thead><tr><th>Permissão</th>{q.data?.map(r=><th key={r.id}>{labels[r.id]}</th>)}</tr></thead><tbody>{all.map(p=><tr key={p}><td><code>{p}</code></td>{q.data?.map(r=><td key={r.id}>{r.permissions.includes(p)?<span className="permission-yes">✓</span>:<span className="permission-no">—</span>}</td>)}</tr>)}</tbody></table></div><p className="panel-note">Não existe permissão de comando industrial neste ciclo. Esconder menu nunca substitui a autorização no servidor.</p></Panel></div></>}

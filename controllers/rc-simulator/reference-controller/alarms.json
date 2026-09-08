@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "profileId": "rc-simulator.reference-controller",
+  "alarms": [
+    {
+      "code": "LOW_OIL_PRESSURE",
+      "severity": "critical",
+      "message": "Oil pressure below configured safe threshold"
+    },
+    {
+      "code": "SIMULATED_DIGITAL_ALARM",
+      "severity": "warning",
+      "message": "Synthetic alarm generated only by the Rapid SCADA demo laboratory binding"
+    }
+  ]
+}

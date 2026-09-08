@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "id": "rc-simulator.reference-controller",
+  "manufacturer": "RC Simulator",
+  "model": "Reference Controller",
+  "displayName": "RC Simulator Reference Controller",
+  "status": "synthetic",
+  "capabilities": {
+    "telemetry": true,
+    "alarms": true,
+    "events": true,
+    "maintenance": false,
+    "remoteControl": false
+  },
+  "files": {
+    "telemetry": "telemetry.json",
+    "alarms": "alarms.json",
+    "ui": "ui.json"
+  }
+}

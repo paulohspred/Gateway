@@ -1,0 +1,9 @@
+module github.com/paulohspred/Gateway
+
+go 1.27.0
+
+require (
+	go.bug.st/serial v1.8.0
+	golang.org/x/crypto v0.56.0
+	golang.org/x/sys v0.47.0
+)
