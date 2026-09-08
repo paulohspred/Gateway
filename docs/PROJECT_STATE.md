@@ -2,8 +2,8 @@
 
 <!-- PROJECT_STATE_SCHEMA: 2 -->
 <!-- CANONICAL_HANDOFF: true -->
-<!-- CURRENT_CODE_BRANCH: feature/frontend-contract -->
-<!-- CURRENT_DEVELOPMENT_TASK: REL-003 -->
+<!-- CURRENT_CODE_BRANCH: main -->
+<!-- CURRENT_DEVELOPMENT_TASK: VM-CLEAN-001 -->
 <!-- EXTERNAL_RUNNING_GATE: none -->
 <!-- PRODUCTION_VALIDATED: false -->
 <!-- PR2_MUST_REMAIN_DRAFT: true -->
@@ -28,10 +28,10 @@ Regras: Gateway não contém register maps físicos; RC Monitor recebe canais Ra
 
 ## Continuidade / branches
 
-- `hardening/standalone-10x` -> PR #2 -> `main`: deve permanecer draft/not-merged.
-- `feature/monitor-core` -> PR #3 -> `hardening/standalone-10x`: deve permanecer draft/not-merged.
-- `feature/frontend-contract` -> PR #4 -> `feature/monitor-core`: deve permanecer draft durante UI-004.
-- não alterar `main` nem mesclar PR #2/#3/#4 sem ordem explícita do proprietário.
+- `main` é a fonte canônica de release e está protegida pelo ruleset ativo `Protect main`.
+- PR #5 (`feature/frontend-contract` -> `main`) foi mergeado com checks obrigatórios verdes no commit `0b5bf4993d087f7532e1b0e22a8f9fc7ee725c3d`.
+- PR #2/#3/#4 permanecem históricos/draft e não devem ser promovidos sem nova decisão explícita.
+- `feature/frontend-contract` permanece como branch histórica de origem do PR #5; novas releases partem de `main`.
 - `tmp-backend-finish` permanece branch temporária de montagem/correção.
 
 Rapid baseline: **6.4.7**. `PRODUCTION_VALIDATED=false`.
@@ -78,7 +78,7 @@ Rapid SCADA: 6.4.7-1
 Node: 22.23.2
 npm: 10.9.8
 Go: 1.27.1
-release instalada na VM LAB: ui4-final-810aa84
+release instalada na VM LAB: ui4-main-0b5bf49
 ```
 
 Correções descobertas por instalação limpa e agora codificadas:
@@ -186,23 +186,31 @@ Estado validado na `tes`:
 
 ```text
 software/LAB: 28/28 PASS_TES
-source/GitHub HEAD: e1ca27e5026382be2a8195279589f23593c84336
-source/GitHub tree: 0663359cf27a356fd329195590dd43dbad997fba
-release instalada: ui4-final-810aa84
-release Manifest commit: 810aa846a9177e410fe0acb3ed05f878ca258bfb
+protected main promotion commit: 0b5bf4993d087f7532e1b0e22a8f9fc7ee725c3d
+validated source tree: 5e94a6483c4938cd0a82f064d8fc300aca7b108b
+PR #5 final head: 21d95065752a19523bba8a9a3528851a762739d5
+Gateway CI / Frontend CI / CodeQL Go / CodeQL Frontend: PASS remote
+main ruleset Protect main: ACTIVE; PR + conversation resolution + 7 required checks; deletion/force-push blocked; no bypass
+release instalada: ui4-main-0b5bf49
+release Manifest commit: 0b5bf4993d087f7532e1b0e22a8f9fc7ee725c3d
+AMD64 release validation + installer dry-run: PASS
+ARM64 checksum + structural validation: PASS
 admin bootstrap password change: PASS live
-admin MFA TOTP: PASS live
+admin MFA TOTP: PASS live e persistiu após reinstall
 outage/recovery: PASS live
 restart: PASS live
 cold boot: PASS live
 post-boot required telemetry: GOOD
 post-boot Rapid history: HTTP 200, 2 series
-release reproducibility local AMD64+ARM64: PASS byte-a-byte
+rc-admin acceptance: PASS
+rc-frontend acceptance: PASS
+frontend external bind 0.0.0.0:80: PASS
+release reproducibility local + GitHub CI: PASS byte-a-byte
 Rapid SCADA 6.4.7 Linux ZIP SHA256 pin: 48e8c8c33b8380fddc7c6012d6856123cb6328a1645e784e97a29aa525311180
 PRODUCTION_VALIDATED=false
 ```
 
-A release atualmente em execução (`ui4-final-810aa84`) contém o runtime já validado na `tes` e referencia `810aa846` no Manifest. O HEAD `e1ca27e` adiciona apenas hardening de release/installer/documentação: SBOM frontend determinístico para builds byte-a-byte e pinagem fail-closed do pacote Rapid SCADA. REL-003 só fecha depois de CI/CodeQL remoto verde neste HEAD, proteção/merge de `main`, rebuild da release a partir do SHA final de `main` e smoke final na `tes`.
+REL-003 está fechado para o escopo software/LAB: o código foi promovido por PR para `main` protegido, os gates remotos ficaram verdes e a release derivada de `main` foi instalada na `tes` com smoke/acceptance e estado MFA preservado. O próximo gate é `VM-CLEAN-001`, uma instalação independente em Ubuntu limpo. HIL/SEM/SOAK continuam externos e `PRODUCTION_VALIDATED=false`.
 
 ## Política de controladoras
 
@@ -240,9 +248,9 @@ GenMon é referência funcional/factual clean-room, não fonte para copiar códi
 | UI-002 | DONE | Shell + primeira vertical frontend real. |
 | UI-003 | DONE | Release/frontend/Nginx/orquestrador LAB reproduzível e E2E Rapid -> Monitor -> frontend validado em VM limpa. |
 | UI-004 | DONE | Capabilities/history, edge cases de quality, responsividade/a11y e superfícies operacionais/admin/engenharia implementadas; validação final pertence a REL-003. |
-| REL-001 | TODO | Confirmar proteção de main. |
+| REL-001 | DONE | `main` protegida por ruleset ativo: PR, conversation resolution, 7 checks, deletion/force-push bloqueados e sem bypass. |
 | REL-002 | DONE | Release inclui Gateway, Monitor e frontend; SBOM frontend foi normalizado e AMD64/ARM64 são reproduzíveis byte-a-byte em teste local. |
-| REL-003 | IN_PROGRESS | 28/28 software/LAB PASS_TES; HEAD `e1ca27e` alinhado GitHub/local. Faltam CI remoto verde, proteção/merge de main e release final construída do SHA de main com smoke na `tes`. |
+| REL-003 | DONE | 28/28 PASS_TES; CI/CodeQL remoto verde; PR #5 mergeado em `main` protegida; release de `main` instalada e smoke final PASS na `tes`. |
 | VM-CLEAN-001 | NEXT | Criar VM Ubuntu limpa somente depois de REL-003 DONE e 28/28 PASS_TES. |
 | PROD-001 | BLOCKED | Exige SOAK verificado + SEM real + HIL + aprovação. |
 <!-- CHECKLIST_END -->
@@ -250,14 +258,12 @@ GenMon é referência funcional/factual clean-room, não fonte para copiar códi
 ## Próximo passo exato
 
 ```text
-1. publicar este handoff atualizado e obter CI + CodeQL remoto verde no HEAD final;
-2. configurar proteção de `main` conforme `docs/GITHUB_PROTECTION.md`;
-3. promover o PR #5 para `main` somente com todos os gates verdes;
-4. congelar o SHA final de `main` e marcar o handoff de release;
-5. construir release AMD64+ARM64 com SBOM a partir do SHA final de `main`;
-6. reinstalar essa release na `tes`, preservar `RC_FRONTEND_BIND=0.0.0.0:80` e repetir acceptance/Manifest/Git;
-7. marcar REL-003 DONE;
-8. somente então iniciar VM-CLEAN-001; HIL/SEM/SOAK de campo permanecem gates posteriores antes de `PRODUCTION_VALIDATED=true`.
+1. mergear este closeout documental por PR protegido e congelar o novo SHA final de `main`;
+2. reconstruir a release AMD64+ARM64 uma última vez desse SHA documental final e reinstalar na `tes` para manter Manifest/GitHub/main exatamente alinhados;
+3. repetir acceptance curto e confirmar MFA persistido + bind externo 0.0.0.0:80;
+4. iniciar `VM-CLEAN-001` em uma VM Ubuntu limpa usando somente o artifact/checksums/documentação do `main`;
+5. executar acceptance completo na VM limpa e comparar Manifest, serviços, listeners, Rapid read-only, telemetry/history e recovery;
+6. após VM-CLEAN-001, seguir para SEM real, HIL físico, comunicação real e SOAK antes de `PRODUCTION_VALIDATED=true`.
 ```
 
 `PRODUCTION_VALIDATED=false`. HIL físico, SEM real de campo e produção permanecem gates externos separados.
