@@ -3,7 +3,7 @@
 <!-- PROJECT_STATE_SCHEMA: 2 -->
 <!-- CANONICAL_HANDOFF: true -->
 <!-- CURRENT_CODE_BRANCH: main -->
-<!-- CURRENT_DEVELOPMENT_TASK: VM-CLEAN-001 -->
+<!-- CURRENT_DEVELOPMENT_TASK: SEM-001 -->
 <!-- EXTERNAL_RUNNING_GATE: none -->
 <!-- PRODUCTION_VALIDATED: false -->
 <!-- PR2_MUST_REMAIN_DRAFT: true -->
@@ -212,6 +212,41 @@ PRODUCTION_VALIDATED=false
 
 REL-003 está fechado para o escopo software/LAB: o código foi promovido por PR para `main` protegido, os gates remotos ficaram verdes e a release derivada de `main` foi instalada na `tes` com smoke/acceptance e estado MFA preservado. O próximo gate é `VM-CLEAN-001`, uma instalação independente em Ubuntu limpo. HIL/SEM/SOAK continuam externos e `PRODUCTION_VALIDATED=false`.
 
+## VM-CLEAN-001 — DONE em VM independente `teste`
+
+A reprodução limpa foi executada em Ubuntu 24.04.3 LTS, x86_64, sem `/opt/rc-gateway`, `/opt/scada`, configs RC ou serviços Rapid/RC antes da instalação. O runtime foi instalado apenas a partir do artifact GitHub Actions do commit congelado `6af76e648109a177cfa7e5c3afaf9087371f739e` e do ZIP oficial Rapid SCADA 6.4.7 cujo SHA256 pinado é `48e8c8c33b8380fddc7c6012d6856123cb6328a1645e784e97a29aa525311180`.
+
+```text
+host: teste
+Ubuntu: 24.04.3 LTS
+runtime Manifest commit: 6af76e648109a177cfa7e5c3afaf9087371f739e
+Rapid SCADA: 6.4.7-1
+clean baseline: PASS
+Gateway/Rapid install: PASS
+RC Monitor/Admin/frontend install: PASS
+rc-admin acceptance: PASS
+rc-frontend acceptance: PASS
+required telemetry: online + GOOD
+Rapid history: HTTP 200, 2 series
+remoteControl=false
+AllowAuthApi=true
+AllowCommandApi=false
+Rapid outage/recovery: PASS
+Monitor/Admin/Nginx restart recovery: PASS
+cold boot + autostart: PASS
+NTP post-boot: synchronized
+Rapid internal ports 10000/10002 LAN blocked: PASS
+ScadaComm non-root: PASS
+SIMULATED_DIGITAL_ALARM raise/clear engine: PASS com binding LAB temporário e rollback para binding original
+admin bootstrap password change: PASS human
+admin MFA enrollment/login: PASS human
+final acceptance after MFA: PASS
+production_validated=false
+```
+
+Evidência sem segredos foi gravada na VM em `/var/lib/rc-scada-stack/vm-clean-automated-evidence.txt` e `/var/lib/rc-scada-stack/vm-clean-final-evidence.txt`. A VM limpa prova reprodutibilidade de instalação e operação read-only, mas não prova SEM real, HIL físico, meio de comunicação real nem SOAK de campo.
+
+
 ## Política de controladoras
 
 GenMon é referência funcional/factual clean-room, não fonte para copiar código/JSON. `controllers/DRAFT_PROFILES.json` contém vocabulário RC; endereços/FC/encoding reais permanecem no Rapid SCADA e só são promovidos com documentação permitida e/ou HIL. Primeira homologação de controladora real continua read-only.
@@ -233,7 +268,7 @@ GenMon é referência funcional/factual clean-room, não fonte para copiar códi
 | VM-007 | DONE | Cold boot pós-non-root. |
 | HARD-001 | DONE | Installer ScadaComm non-root least-privilege. |
 | SOAK-001 | TODO | Janela terminou; localizar e verificar relatório real antes de tocar a VM original. |
-| SEM-001 | TODO | Binding semântico com canais Rapid reais, não demo. |
+| SEM-001 | NEXT | Binding semântico com canais Rapid reais, não demo. |
 | MON-001 | DONE | Foundation. |
 | MON-002 | DONE | API read-only. |
 | MON-003 | DONE | Profiles. |
@@ -247,23 +282,23 @@ GenMon é referência funcional/factual clean-room, não fonte para copiar códi
 | UI-001 | DONE | Contratos de produto/HMI/commissioning congelados. |
 | UI-002 | DONE | Shell + primeira vertical frontend real. |
 | UI-003 | DONE | Release/frontend/Nginx/orquestrador LAB reproduzível e E2E Rapid -> Monitor -> frontend validado em VM limpa. |
-| UI-004 | DONE | Capabilities/history, edge cases de quality, responsividade/a11y e superfícies operacionais/admin/engenharia implementadas; validação final pertence a REL-003. |
+| UI-004 | DONE | Capabilities/history, edge cases de quality, responsividade/a11y e superfícies operacionals/admin/engenharia implementadas; validação final pertence a REL-003. |
 | REL-001 | DONE | `main` protegida por ruleset ativo: PR, conversation resolution, 7 checks, deletion/force-push bloqueados e sem bypass. |
 | REL-002 | DONE | Release inclui Gateway, Monitor e frontend; SBOM frontend foi normalizado e AMD64/ARM64 são reproduzíveis byte-a-byte em teste local. |
 | REL-003 | DONE | 28/28 PASS_TES; CI/CodeQL remoto verde; PR #5 mergeado em `main` protegida; release de `main` instalada e smoke final PASS na `tes`. |
-| VM-CLEAN-001 | NEXT | Criar VM Ubuntu limpa somente depois de REL-003 DONE e 28/28 PASS_TES. |
+| VM-CLEAN-001 | DONE | Ubuntu 24.04.3 limpa reproduzida do artifact `6af76e6`; install/acceptance/outage/restart/reboot/MFA PASS; sem source checkout de runtime. |
 | PROD-001 | BLOCKED | Exige SOAK verificado + SEM real + HIL + aprovação. |
 <!-- CHECKLIST_END -->
 
 ## Próximo passo exato
 
 ```text
-1. mergear este closeout documental por PR protegido e congelar o novo SHA final de `main`;
-2. reconstruir a release AMD64+ARM64 uma última vez desse SHA documental final e reinstalar na `tes` para manter Manifest/GitHub/main exatamente alinhados;
-3. repetir acceptance curto e confirmar MFA persistido + bind externo 0.0.0.0:80;
-4. iniciar `VM-CLEAN-001` em uma VM Ubuntu limpa usando somente o artifact/checksums/documentação do `main`;
-5. executar acceptance completo na VM limpa e comparar Manifest, serviços, listeners, Rapid read-only, telemetry/history e recovery;
-6. após VM-CLEAN-001, seguir para SEM real, HIL físico, comunicação real e SOAK antes de `PRODUCTION_VALIDATED=true`.
+1. iniciar SEM-001 com documentação permitida e canais Rapid reais da primeira controladora; nenhuma escrita industrial;
+2. executar HIL-001 read-only na controladora física e validar identidade, escalas, quality, offline, alarmes e histórico;
+3. executar HIL-002 no modem/VPN/meio físico real e repetir outage/recovery;
+4. localizar/verificar SOAK-001 anterior ou executar nova janela de soak com evidência objetiva;
+5. validar backup/restore, TLS/firewall/credenciais/runbooks e preflight de produção;
+6. somente após SEM + HIL + comunicação + SOAK + aprovação alterar `PRODUCTION_VALIDATED=true`.
 ```
 
 `PRODUCTION_VALIDATED=false`. HIL físico, SEM real de campo e produção permanecem gates externos separados.
